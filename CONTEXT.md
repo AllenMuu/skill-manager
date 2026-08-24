@@ -1,0 +1,77 @@
+# Skill Manager
+
+Skill Manager manages the availability of local agent resources across a shared skill library, agent-wide locations, and individual repositories.
+
+## Language
+
+**Skill library**:
+The independent, authoritative local collection of reusable skills. It is the source from which project skills are selected and installed; the initial library is `~/.agents/skills`, with a configurable location.
+_Avoid_: skill repository, global skill folder
+
+**Global baseline**:
+The intentionally small set of agent resources kept available in an agent's global location, including the Skill Manager CLI usage skill.
+_Avoid_: global skills, root skills
+
+**Project activation**:
+The resulting installation of selected managed skills for one repository, represented by their project-local soft links rather than a committed manifest.
+_Avoid_: project configuration, project sync
+
+**Managed skill**:
+A skill whose presence in a project or global baseline is controlled by Skill Manager from the skill library.
+_Avoid_: copied skill, local skill
+
+**Project skill**:
+A skill placed in a repository's agent-recognized skill location. It may be unmanaged and remain independent, or be converted into a managed skill.
+_Avoid_: local skill
+
+**Adoption**:
+The explicit conversion of an existing project skill into a managed skill: its content is stored in the skill library and its former project location becomes a soft link.
+_Avoid_: import, migration
+
+**Fork**:
+The explicit conversion of one managed project skill into an independent project skill, ending its shared-library relationship without changing other projects.
+_Avoid_: detach, local override
+
+**Target agent**:
+An agent integration selected to receive a project's managed-skill soft links. A project may have multiple target agents.
+_Avoid_: platform, provider
+
+**Operator skill**:
+A small global-baseline skill that teaches an agent to use Skill Manager: search the skill library, explain a recommendation, request confirmation, then invoke the CLI.
+_Avoid_: CLI prompt, manager prompt
+
+**Directory skill**:
+A skill represented by a directory containing `SKILL.md` and any companion resources. It is the only resource shape Skill Manager manages in its first release.
+_Avoid_: skill file, Markdown skill
+
+**Compatibility declaration**:
+Optional skill metadata that names the target agents for which a skill's instructions are intended. It informs installation warnings but does not prevent an explicit installation.
+_Avoid_: installation support, adapter support
+
+**Operation journal**:
+The local, reversible record of a confirmed Skill Manager file operation, used to preview changes and support undo.
+_Avoid_: audit log, sync history
+
+**Initialization**:
+The explicit global operation that verifies the CLI and installs or updates Operator skills. Project operations do not implicitly alter the global baseline.
+_Avoid_: setup, bootstrap
+
+**Environment activation**:
+The machine-local presence of managed-skill soft links in a project. It is intentionally not a portable or Git-versioned project declaration.
+_Avoid_: checked-in activation, project state
+
+**Reconciliation**:
+The repair of a project's managed-skill soft links so they point to the currently configured skill library.
+_Avoid_: synchronization, migration
+
+**Orphaned link**:
+A managed-skill soft link whose library target no longer exists. It is reported by diagnostics and may be repaired by reconciliation.
+_Avoid_: missing skill, broken installation
+
+**Companion metadata**:
+Optional `.skill-manager.yaml` data stored beside a directory skill, containing management-specific fields such as tags, target-agent compatibility, and provenance without changing `SKILL.md` semantics.
+_Avoid_: skill frontmatter, registry entry
+
+**Guarded operation**:
+A management operation that previews its changes, requires confirmation, records a reversible journal entry, and never executes skill-provided code.
+_Avoid_: automatic sync, unsafe update
