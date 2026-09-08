@@ -177,6 +177,8 @@ func newAddCommand(options *rootOptions) *cobra.Command {
 	var targets []string
 	var allDetected bool
 	var yes bool
+	var conflict string
+	var force bool
 	cmd := &cobra.Command{Use: "add <skill>", Short: "Activate a library skill for selected target agents", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		if len(targets) == 0 && !allDetected {
 			return fmt.Errorf("at least one --target is required (or use --all-detected)")
@@ -187,6 +189,13 @@ func newAddCommand(options *rootOptions) *cobra.Command {
 		if len(targets) == 0 {
 			return fmt.Errorf("no target agents detected")
 		}
+		if conflict != "" && conflict != string(lifecycle.ConflictReplace) {
+			return fmt.Errorf("unknown conflict strategy %q (available: replace)", conflict)
+		}
+		if conflict != "" && !force {
+			return fmt.Errorf("conflict strategy %q requires --force confirmation", conflict)
+		}
+		opts := lifecycle.Options{Conflict: lifecycle.ConflictStrategy(conflict), Force: force}
 		lib, err := library(options)
 		if err != nil {
 			return err
@@ -215,7 +224,7 @@ func newAddCommand(options *rootOptions) *cobra.Command {
 			_, previewErr = fmt.Fprint(cmd.OutOrStdout(), plan.String())
 			return previewErr == nil && yes
 		}
-		_, err = lifecycle.New(lib, journal(project), confirm).Add(project, skill, ts)
+		_, err = lifecycle.New(lib, journal(project), confirm).Add(project, skill, ts, opts)
 		if previewErr != nil {
 			return previewErr
 		}
@@ -224,6 +233,8 @@ func newAddCommand(options *rootOptions) *cobra.Command {
 	projectFlag(cmd, &project)
 	cmd.Flags().StringSliceVar(&targets, "target", nil, "target agent (claude-code or codex)")
 	cmd.Flags().BoolVar(&allDetected, "all-detected", false, "activate for every detected supported target agent")
+	cmd.Flags().StringVar(&conflict, "conflict", "", "conflict strategy for existing destination paths (replace)")
+	cmd.Flags().BoolVar(&force, "force", false, "supply force confirmation for the selected conflict strategy")
 	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the displayed plan")
 	return cmd
 }

@@ -18,9 +18,52 @@ import (
 var (
 	ErrNotConfirmed   = operation.ErrNotConfirmed
 	ErrUnsafePath     = errors.New("refusing unmanaged or unexpected path")
-	ErrConflict       = errors.New("operation conflicts with existing skill")
+	ErrForceRequired = errors.New("conflict strategy requires force confirmation")
+	ErrConflict      = errors.New("operation conflicts with existing skill")
 	errConcurrentEdit = errors.New("project skill changed while operation was staged")
 )
+
+// ConflictStrategy selects how a mutating operation handles an existing
+// conflicting destination path.
+type ConflictStrategy string
+
+const (
+	// ConflictReplace removes a conflicting destination after force confirmation.
+	ConflictReplace ConflictStrategy = "replace"
+)
+
+// Options guards a mutating lifecycle operation.
+type Options struct {
+	// Conflict selects the strategy for existing conflicting paths. The empty
+	// default refuses conflicts without touching the filesystem.
+	Conflict ConflictStrategy
+	// Force supplies the explicit force confirmation a conflict strategy needs.
+	Force bool
+}
+
+func optionsOf(opts []Options) Options {
+	if len(opts) == 0 {
+		return Options{}
+	}
+	return opts[0]
+}
+
+// conflicts reports whether path holds something other than a link to source.
+func conflicts(path, source string) (bool, error) {
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		if target, err := os.Readlink(path); err == nil && target == source {
+			return false, nil
+		}
+	}
+	return true, nil
+}
 
 // Status identifies how a project skill is owned.
 type Status string
@@ -62,7 +105,8 @@ func New(libraryPath string, journal *operation.Journal, confirm ConfirmFunc) *S
 }
 
 // Add activates skill for each explicitly selected target using absolute soft links.
-func (s *Service) Add(project string, skill catalog.Skill, targets []adapter.Target) (operation.Plan, error) {
+func (s *Service) Add(project string, skill catalog.Skill, targets []adapter.Target, opts ...Options) (operation.Plan, error) {
+	options := optionsOf(opts)
 	if err := adapter.ValidateIdentifier(skill.Identifier); err != nil {
 		return operation.Plan{}, fmt.Errorf("%w: %v", ErrUnsafePath, err)
 	}
@@ -96,10 +140,21 @@ func (s *Service) Add(project string, skill catalog.Skill, targets []adapter.Tar
 		if contains(skill.Compatibility, string(target)) == false {
 			plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s is not declared compatible with %s", skill.Identifier, target))
 		}
-		if err := s.safeNewLink(path, source); err != nil {
+		action := "create absolute link"
+		conflict, err := conflicts(path, source)
+		if err != nil {
 			return plan, err
 		}
-		plan.Changes = append(plan.Changes, operation.Change{Path: path, Action: "create absolute link", Detail: source})
+		if conflict {
+			if options.Conflict != ConflictReplace {
+				return plan, ErrUnsafePath
+			}
+			if !options.Force {
+				return plan, ErrForceRequired
+			}
+			action = "replace conflicting path with absolute link"
+		}
+		plan.Changes = append(plan.Changes, operation.Change{Path: path, Action: action, Detail: source})
 		paths = append(paths, path)
 	}
 	if len(paths) == 0 {
@@ -117,6 +172,13 @@ func (s *Service) Add(project string, skill catalog.Skill, targets []adapter.Tar
 			return fmt.Errorf("%w: library source changed after confirmation", ErrUnsafePath)
 		}
 		for _, path := range paths {
+			conflict, err := conflicts(path, source)
+			if err != nil {
+				return err
+			}
+			if conflict && options.Conflict == ConflictReplace && options.Force {
+				continue
+			}
 			if err := s.safeNewLink(path, source); err != nil {
 				return err
 			}
@@ -124,7 +186,18 @@ func (s *Service) Add(project string, skill catalog.Skill, targets []adapter.Tar
 		return nil
 	}, func() error {
 		for _, path := range paths {
-			if _, err := os.Lstat(path); err == nil {
+			conflict, err := conflicts(path, source)
+			if err != nil {
+				return err
+			}
+			if conflict {
+				if options.Conflict != ConflictReplace || !options.Force {
+					return ErrUnsafePath
+				}
+				if err := os.RemoveAll(path); err != nil {
+					return err
+				}
+			} else if _, err := os.Lstat(path); !os.IsNotExist(err) {
 				continue
 			}
 			if err := stagedLink(path, source); err != nil {
@@ -141,7 +214,8 @@ func (s *Service) Activate(project string, skill catalog.Skill, targets []adapte
 }
 
 // AddMany activates an explicit selection as one confirmed, journaled transaction.
-func (s *Service) AddMany(project string, skills []catalog.Skill, targets []adapter.Target) (operation.Plan, error) {
+func (s *Service) AddMany(project string, skills []catalog.Skill, targets []adapter.Target, opts ...Options) (operation.Plan, error) {
+	options := optionsOf(opts)
 	project, err := filepath.Abs(project)
 	if err != nil {
 		return operation.Plan{}, err
@@ -177,15 +251,26 @@ func (s *Service) AddMany(project string, skills []catalog.Skill, targets []adap
 				return plan, ErrUnsafePath
 			}
 			seen[path] = true
-			if err := s.safeNewLink(path, source); err != nil {
+			action := "create absolute link"
+			conflict, err := conflicts(path, source)
+			if err != nil {
 				return plan, err
+			}
+			if conflict {
+				if options.Conflict != ConflictReplace {
+					return plan, ErrUnsafePath
+				}
+				if !options.Force {
+					return plan, ErrForceRequired
+				}
+				action = "replace conflicting path with absolute link"
 			}
 			if !contains(skill.Compatibility, string(target)) {
 				plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s is not declared compatible with %s", skill.Identifier, target))
 			}
 			paths = append(paths, path)
 			sources = append(sources, source)
-			plan.Changes = append(plan.Changes, operation.Change{Path: path, Action: "create absolute link", Detail: source})
+			plan.Changes = append(plan.Changes, operation.Change{Path: path, Action: action, Detail: source})
 		}
 	}
 	if len(paths) == 0 {
@@ -207,18 +292,27 @@ func (s *Service) AddMany(project string, skills []catalog.Skill, targets []adap
 		return s.Journal.Restore(snapshots)
 	}
 	for i, path := range paths {
-		if err := s.safeNewLink(path, sources[i]); err != nil {
+		conflict, err := conflicts(path, sources[i])
+		if err != nil {
 			return plan, errors.Join(err, rollback())
 		}
-		if _, err := os.Lstat(path); os.IsNotExist(err) {
-			if err := stagedLink(path, sources[i]); err != nil {
+		if conflict {
+			if options.Conflict != ConflictReplace || !options.Force {
+				return plan, errors.Join(ErrUnsafePath, rollback())
+			}
+			if err := os.RemoveAll(path); err != nil {
 				return plan, errors.Join(err, rollback())
 			}
-			published = append(published, i)
-			if s.BeforePublish != nil {
-				if err := s.BeforePublish("add-many-published"); err != nil {
-					return plan, errors.Join(err, rollback())
-				}
+		} else if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			continue
+		}
+		if err := stagedLink(path, sources[i]); err != nil {
+			return plan, errors.Join(err, rollback())
+		}
+		published = append(published, i)
+		if s.BeforePublish != nil {
+			if err := s.BeforePublish("add-many-published"); err != nil {
+				return plan, errors.Join(err, rollback())
 			}
 		}
 	}

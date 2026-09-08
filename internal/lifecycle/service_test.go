@@ -593,3 +593,115 @@ func hasStatus(items []lifecycle.Item, id string, status lifecycle.Status) bool 
 	}
 	return false
 }
+
+func TestAddReplaceStrategyRequiresForce(t *testing.T) {
+	root, project, skill := fixture(t)
+	a, _ := adapter.For(adapter.Codex)
+	path := a.ProjectSkillPath(project, skill.Identifier)
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := lifecycle.New(filepath.Join(root, "library"), operation.New(filepath.Join(root, "journal.json")), func(operation.Plan) bool { return true })
+	_, err := svc.Add(project, skill, []adapter.Target{adapter.Codex}, lifecycle.Options{Conflict: lifecycle.ConflictReplace})
+	if err == nil || !errors.Is(err, lifecycle.ErrForceRequired) {
+		t.Fatalf("Add error = %v, want force requirement", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("unmanaged path was changed: %v", err)
+	}
+}
+
+func TestAddReplaceForceReplacesUnmanagedDirectoryAndUndoRestores(t *testing.T) {
+	root, project, skill := fixture(t)
+	a, _ := adapter.For(adapter.Codex)
+	path := a.ProjectSkillPath(project, skill.Identifier)
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := filepath.Join(path, "SKILL.md")
+	if err := os.WriteFile(original, []byte("unmanaged"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var preview operation.Plan
+	journal := operation.New(filepath.Join(root, "journal.json"))
+	svc := lifecycle.New(filepath.Join(root, "library"), journal, func(p operation.Plan) bool { preview = p; return true })
+	opts := lifecycle.Options{Conflict: lifecycle.ConflictReplace, Force: true}
+	if _, err := svc.Add(project, skill, []adapter.Target{adapter.Codex}, opts); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.Readlink(path)
+	if err != nil || got != skill.SourcePath {
+		t.Fatalf("link = %q, %v; want link to %s", got, err, skill.SourcePath)
+	}
+	if len(preview.Changes) != 1 || preview.Changes[0].Action != "replace conflicting path with absolute link" {
+		t.Fatalf("changes = %#v, want one replace change", preview.Changes)
+	}
+	if err := svc.Undo(); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := os.ReadFile(original)
+	if err != nil || string(restored) != "unmanaged" {
+		t.Fatalf("undo restored %q, %v; want original unmanaged content", restored, err)
+	}
+	if _, err := os.Lstat(path); err != nil || infoIsLink(t, path) {
+		t.Fatalf("path after undo = %v", err)
+	}
+}
+
+func TestAddManyReplaceForceReplacesConflictingLinks(t *testing.T) {
+	root, project, one := fixture(t)
+	two := writeSkill(t, filepath.Join(root, "library", "two"), "two")
+	a, _ := adapter.For(adapter.Codex)
+	path := a.ProjectSkillPath(project, two.Identifier)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("plain file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	journal := operation.New(filepath.Join(root, "j.json"))
+	svc := lifecycle.New(filepath.Join(root, "library"), journal, func(operation.Plan) bool { return true })
+	opts := lifecycle.Options{Conflict: lifecycle.ConflictReplace, Force: true}
+	if _, err := svc.AddMany(project, []catalog.Skill{one, two}, []adapter.Target{adapter.Codex}, opts); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{one.Identifier, two.Identifier} {
+		if _, err := os.Readlink(filepath.Join(project, ".codex", "skills", id)); err != nil {
+			t.Fatalf("%s not a link: %v", id, err)
+		}
+	}
+	if err := svc.Undo(); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := os.ReadFile(path)
+	if err != nil || string(restored) != "plain file" {
+		t.Fatalf("undo restored %q, %v; want original file content", restored, err)
+	}
+}
+
+func TestAddReplaceNotConfirmedLeavesConflict(t *testing.T) {
+	root, project, skill := fixture(t)
+	a, _ := adapter.For(adapter.Codex)
+	path := a.ProjectSkillPath(project, skill.Identifier)
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := lifecycle.New(filepath.Join(root, "library"), operation.New(filepath.Join(root, "journal.json")), func(operation.Plan) bool { return false })
+	opts := lifecycle.Options{Conflict: lifecycle.ConflictReplace, Force: true}
+	if _, err := svc.Add(project, skill, []adapter.Target{adapter.Codex}, opts); !errors.Is(err, operation.ErrNotConfirmed) {
+		t.Fatalf("Add error = %v, want confirmation refusal", err)
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() {
+		t.Fatalf("conflicting directory changed: %v", err)
+	}
+}
+
+func infoIsLink(t *testing.T, path string) bool {
+	t.Helper()
+	info, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Mode()&os.ModeSymlink != 0
+}
