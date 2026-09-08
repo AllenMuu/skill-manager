@@ -58,6 +58,55 @@ func TestAddRequiresConfirmationAndRefusesUnmanagedDestination(t *testing.T) {
 	}
 }
 
+func TestAddManyDeclineLeavesNoPartialLinks(t *testing.T) {
+	root, project, one := fixture(t)
+	two := writeSkill(t, filepath.Join(root, "library", "two"), "two")
+	svc := lifecycle.New(filepath.Join(root, "library"), operation.New(filepath.Join(root, "j.json")), func(operation.Plan) bool { return false })
+	if _, err := svc.AddMany(project, []catalog.Skill{one, two}, []adapter.Target{adapter.Codex}); !errors.Is(err, operation.ErrNotConfirmed) {
+		t.Fatalf("err=%v", err)
+	}
+	for _, id := range []string{one.Identifier, two.Identifier} {
+		if _, err := os.Lstat(filepath.Join(project, ".codex", "skills", id)); !os.IsNotExist(err) {
+			t.Fatalf("%s created", id)
+		}
+	}
+}
+
+func TestAddManySecondPublicationFailureRollsBack(t *testing.T) {
+	root, project, one := fixture(t)
+	two := writeSkill(t, filepath.Join(root, "library", "two"), "two")
+	svc := lifecycle.New(filepath.Join(root, "library"), operation.New(filepath.Join(root, "j.json")), func(operation.Plan) bool { return true })
+	calls := 0
+	svc.BeforePublish = func(string) error {
+		calls++
+		if calls == 2 {
+			return errors.New("second")
+		}
+		return nil
+	}
+	if _, err := svc.AddMany(project, []catalog.Skill{one, two}, []adapter.Target{adapter.Codex}); err == nil {
+		t.Fatal("expected failure")
+	}
+	for _, id := range []string{one.Identifier, two.Identifier} {
+		if _, err := os.Lstat(filepath.Join(project, ".codex", "skills", id)); !os.IsNotExist(err) {
+			t.Fatalf("%s remains", id)
+		}
+	}
+}
+
+func TestAddManyAggregatesCompatibilityWarningsBeforeConfirmation(t *testing.T) {
+	root, project, one := fixture(t)
+	two := writeSkill(t, filepath.Join(root, "library", "two"), "two")
+	var plan operation.Plan
+	svc := lifecycle.New(filepath.Join(root, "library"), operation.New(filepath.Join(root, "j.json")), func(p operation.Plan) bool { plan = p; return false })
+	if _, err := svc.AddMany(project, []catalog.Skill{one, two}, []adapter.Target{adapter.Codex}); !errors.Is(err, operation.ErrNotConfirmed) {
+		t.Fatal(err)
+	}
+	if len(plan.Warnings) != 2 {
+		t.Fatalf("warnings=%#v", plan.Warnings)
+	}
+}
+
 func TestListRemoveAndUndoKeepLibrary(t *testing.T) {
 	root, project, skill := fixture(t)
 	journal := operation.New(filepath.Join(root, "journal.json"))

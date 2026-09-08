@@ -79,6 +79,44 @@ func (j *Journal) Record(operation string, before, after []Snapshot) error {
 	return j.write(entries)
 }
 
+// RecordedLinkTarget reports whether a confirmed operation recorded path as a
+// soft link, returning its recorded destination without following it.
+func (j *Journal) RecordedLinkTarget(path string) (string, bool, error) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return "", false, err
+	}
+	entries, err := j.entries()
+	if err != nil {
+		return "", false, err
+	}
+	for i := len(entries) - 1; i >= 0; i-- {
+		for _, snapshot := range entries[i].After {
+			if snapshot.Path != path {
+				continue
+			}
+			// A path's newest post-operation state owns the answer. Never fall
+			// through to an older managed-link snapshot after a fork/remove.
+			if !snapshot.Exists {
+				return "", false, nil
+			}
+			info, err := os.Lstat(snapshot.Backup)
+			if err != nil {
+				return "", false, fmt.Errorf("inspect journal backup: %w", err)
+			}
+			if info.Mode()&os.ModeSymlink == 0 {
+				return "", false, nil
+			}
+			target, err := os.Readlink(snapshot.Backup)
+			if err != nil {
+				return "", false, err
+			}
+			return target, true, nil
+		}
+	}
+	return "", false, nil
+}
+
 // UndoLatest restores the pre-operation state of the latest journal entry.
 func (j *Journal) UndoLatest(confirm func(Plan) bool) error {
 	entries, err := j.entries()

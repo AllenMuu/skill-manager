@@ -140,6 +140,101 @@ func (s *Service) Activate(project string, skill catalog.Skill, targets []adapte
 	return s.Add(project, skill, targets)
 }
 
+// AddMany activates an explicit selection as one confirmed, journaled transaction.
+func (s *Service) AddMany(project string, skills []catalog.Skill, targets []adapter.Target) (operation.Plan, error) {
+	project, err := filepath.Abs(project)
+	if err != nil {
+		return operation.Plan{}, err
+	}
+	plan := operation.Plan{Operation: "activate selected skills"}
+	var paths, sources []string
+	seen := map[string]bool{}
+	for _, skill := range skills {
+		if err := adapter.ValidateIdentifier(skill.Identifier); err != nil {
+			return plan, errors.Join(ErrUnsafePath, err)
+		}
+		source, err := filepath.Abs(skill.SourcePath)
+		if err != nil {
+			return plan, err
+		}
+		if source != filepath.Join(s.LibraryPath, skill.Identifier) {
+			return plan, ErrUnsafePath
+		}
+		ok, err := s.eligibleConfiguredSkill(skill.Identifier, source)
+		if err != nil {
+			return plan, err
+		}
+		if !ok {
+			return plan, ErrUnsafePath
+		}
+		for _, target := range targets {
+			a, ok := adapter.For(target)
+			if !ok {
+				return plan, fmt.Errorf("unsupported target %q", target)
+			}
+			path := a.ProjectSkillPath(project, skill.Identifier)
+			if seen[path] {
+				return plan, ErrUnsafePath
+			}
+			seen[path] = true
+			if err := s.safeNewLink(path, source); err != nil {
+				return plan, err
+			}
+			if !contains(skill.Compatibility, string(target)) {
+				plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s is not declared compatible with %s", skill.Identifier, target))
+			}
+			paths = append(paths, path)
+			sources = append(sources, source)
+			plan.Changes = append(plan.Changes, operation.Change{Path: path, Action: "create absolute link", Detail: source})
+		}
+	}
+	if len(paths) == 0 {
+		return plan, nil
+	}
+	if !s.confirmed(plan) {
+		return plan, ErrNotConfirmed
+	}
+	before, err := s.Journal.Capture(paths)
+	if err != nil {
+		return plan, err
+	}
+	published := []int{}
+	rollback := func() error {
+		snapshots := []operation.Snapshot{}
+		for _, i := range published {
+			snapshots = append(snapshots, before[i])
+		}
+		return s.Journal.Restore(snapshots)
+	}
+	for i, path := range paths {
+		if err := s.safeNewLink(path, sources[i]); err != nil {
+			return plan, errors.Join(err, rollback())
+		}
+		if _, err := os.Lstat(path); os.IsNotExist(err) {
+			if err := stagedLink(path, sources[i]); err != nil {
+				return plan, errors.Join(err, rollback())
+			}
+			published = append(published, i)
+			if s.BeforePublish != nil {
+				if err := s.BeforePublish("add-many-published"); err != nil {
+					return plan, errors.Join(err, rollback())
+				}
+			}
+		}
+	}
+	after, err := s.Journal.Capture(paths)
+	if err != nil {
+		return plan, errors.Join(err, s.Journal.Restore(before))
+	}
+	if err := s.Journal.Record("activate selected skills", before, after); err != nil {
+		if errors.Is(err, operation.ErrJournalCommitted) {
+			return plan, err
+		}
+		return plan, errors.Join(err, s.Journal.Restore(before))
+	}
+	return plan, nil
+}
+
 // List inventories supported project skill locations without changing them.
 func (s *Service) List(project string) ([]Item, error) {
 	project, err := filepath.Abs(project)
