@@ -19,6 +19,7 @@ func NewRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&options.configPath, "config", "", "path to Skill Manager configuration")
 	root.AddCommand(newSearchCommand(options))
 	root.AddCommand(newInitCommand())
+	root.AddCommand(newRecommendCommand(options))
 	root.AddCommand(newProjectCommands(options)...)
 	return root
 }

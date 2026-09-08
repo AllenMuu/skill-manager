@@ -43,6 +43,7 @@ skill-manager list --project .      # show managed/unmanaged/orphaned skills
 |---|---|
 | `init` | Verify the CLI and install or update the minimal global Operator skill (guarded, confirmed) |
 | `search <query>` | Search library skill identifiers, descriptions, bodies, and tags |
+| `recommend` | Detect the project stack statically and rank matching skills (read-only) |
 | `select` | Interactive workflow: search, choose skills, choose targets, confirm |
 | `add <skill>` | Activate a library skill for selected target agents |
 | `list` | Inventory project skills with their status |
@@ -94,9 +95,22 @@ skill-manager doctor --project . --update-gitignore  # offer exact scoped ignore
 - `skill-manager doctor` — diagnose invalid library entries, orphaned links, and unsupported agents.
 - `skill-manager reconcile` — relink orphaned managed links after the library moved (uses journal ownership, confirmed, rolled back on failure).
 
+## Recommend
+
+`recommend` is a read-only command that detects the current project's technology stack from static markers and ranks matching skills from the library. It never executes project code, installs dependencies, uses the network, or modifies any file:
+
+```text
+skill-manager recommend                 # evaluate the current directory
+skill-manager recommend --project ../service
+skill-manager recommend --project . --json
+```
+
+Detected technologies come from the documented marker vocabulary: `go.mod`, `package.json`, `tsconfig.json`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `pyproject.toml`, `Cargo.toml`, `Gemfile`, `Dockerfile`, Compose files, and the `.claude`, `.codex`, and `.agents` directories. The technology vocabulary covers Go, Node.js, TypeScript, Maven, Gradle, Python, Rust, Ruby, Docker, Compose, Express, NestJS, React, Next.js, Spring Boot, Django, FastAPI, Rails, PostgreSQL, MySQL, Redis, MongoDB, and the supported agents. Matching skills are ranked by exact companion tags first, then identifier and description text, then body text; each recommendation explains why it matched. Traversal skips dependency and build directories and directory soft links, reads at most 1 MiB per marker, and stops after 10,000 entries with `scanComplete: false`.
+
+Monorepos report each independently marked sub-project as its own scope, so unrelated services never blend into one stack. Scopes without recognized markers return `insufficient_evidence` with a pointer to catalog search; stacks with no matching skill return `no_catalog_match` with guidance to add technology tags to companion metadata.
+
 ## Roadmap
 
-- **Recommend** — a read-only command that detects the current project's technology stack and ranks matching skills (in design, see `openspec/changes/recommend-skills-by-project-stack`).
 - **Agent Manager** — generalize into multi-agent resource governance covering skills, subagents, and shared memory (see the GitHub issues).
 - **React WebUI** — a post-CLI web interface over the same local services.
 - **Wails** — desktop packaging of the WebUI.
