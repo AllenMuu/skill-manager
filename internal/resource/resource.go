@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/AllenMuu/skill-manager/internal/catalog"
 )
 
 // ErrDetectionUnsupported indicates that a handler requires a concrete
@@ -61,6 +63,9 @@ type ManagedResource struct {
 // locations are intentionally supplied by the integration, not this contract.
 type DetectionRequest struct {
 	Kind Kind
+	// Root is the configured catalog root for handlers that discover local
+	// resources. An empty root preserves the validation-only behavior.
+	Root string
 }
 
 // Inspection is the stable result of examining a managed resource.
@@ -112,7 +117,42 @@ func (SkillHandler) Detect(request DetectionRequest) ([]ManagedResource, error) 
 	if request.Kind != "" && request.Kind != Skill {
 		return nil, fmt.Errorf("Skill handler does not support resource kind %q", request.Kind)
 	}
-	return nil, ErrDetectionUnsupported
+	if request.Root == "" {
+		return nil, ErrDetectionUnsupported
+	}
+	skills, _, err := catalog.Discover(request.Root)
+	if err != nil {
+		return nil, err
+	}
+	resources := make([]ManagedResource, 0, len(skills))
+	for _, skill := range skills {
+		resources = append(resources, SkillResource(skill))
+	}
+	return resources, nil
+}
+
+// SkillResource normalizes a catalog Skill into the agent-neutral contract.
+// The source path remains provenance; placement is still owned by an adapter.
+func SkillResource(skill catalog.Skill) ManagedResource {
+	metadata := map[string]string{}
+	if skill.Name != "" {
+		metadata["name"] = skill.Name
+	}
+	if skill.Description != "" {
+		metadata["description"] = skill.Description
+	}
+	if len(skill.Tags) > 0 {
+		metadata["tags"] = strings.Join(skill.Tags, ",")
+	}
+	return ManagedResource{
+		Version:              "v1",
+		ID:                   skill.Identifier,
+		Kind:                 Skill,
+		Provenance:           Provenance{Source: skill.SourcePath},
+		Compatibility:        Compatibility{Agents: append([]string(nil), skill.Compatibility...)},
+		RequiredCapabilities: []Capability{CapabilityFilesystemRead, CapabilityFilesystemWrite},
+		Metadata:             metadata,
+	}
 }
 
 func (h SkillHandler) Inspect(managed ManagedResource) (Inspection, error) {

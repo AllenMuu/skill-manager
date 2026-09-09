@@ -2,6 +2,8 @@ package resource_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -99,5 +101,23 @@ func TestSkillHandlerDetectionIsExplicitlyUnsupported(t *testing.T) {
 	}
 	if _, err := handler.Detect(resource.DetectionRequest{Kind: resource.Memory}); err == nil {
 		t.Fatal("Detect(invalid) error = nil")
+	}
+}
+
+func TestSkillHandlerDetectsCatalogEntriesFromConfiguredRoot(t *testing.T) {
+	root := t.TempDir()
+	skillDir := filepath.Join(root, "demo")
+	if err := os.MkdirAll(skillDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: Demo\ndescription: A demo skill\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resources, err := resource.NewSkillHandler().Detect(resource.DetectionRequest{Kind: resource.Skill, Root: root})
+	if err != nil {
+		t.Fatalf("Detect() error = %v", err)
+	}
+	if len(resources) != 1 || resources[0].ID != "demo" || resources[0].Provenance.Source != skillDir {
+		t.Fatalf("Detect() = %#v, want catalog resource", resources)
 	}
 }

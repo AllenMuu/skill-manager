@@ -3,14 +3,14 @@
 - [x] 1.1 Inventory the current Skill CLI entrypoints, configuration, companion metadata, project links, and journal formats; add legacy fixtures and verify they reproduce existing `go test ./...` behavior.
 - [x] 1.2 Introduce `agent-manager` as the primary binary and route `skill-manager` through the same command implementation with a deprecation notice; verify existing command arguments retain equivalent outcomes.
 - [x] 1.3 Update `CONTEXT.md`, README command examples, and user-facing diagnostics to use Agent Manager for the product and Skill for the resource domain; verify terminology preserves the documented glossary distinctions.
-- [ ] 1.4 Add versioned readers that normalize legacy Skill configuration and journal entries without rewriting them; verify a pre-migration activation can be listed and undone.
+- [x] 1.4 Add versioned readers that normalize legacy Skill configuration and journal entries without rewriting them; verify a pre-migration activation can be listed and undone.
 - [x] 1.5 Write an ADR for core resource contracts, agent adapters, provider boundaries, and compatibility guarantees; verify it records rejected alternatives from `design.md`.
 
 ## 2. Agent and resource governance core
 
 - [x] 2.1 Define managed-resource identity, kind, provenance, compatibility, and capability requirement models; verify unit tests cover valid and invalid resource contracts.
-- [ ] 2.2 Define `ResourceHandler` and `AgentAdapter` contracts for detection, inspection, validation, planning, placement, and capabilities; verify domain tests do not require runtime-specific paths.
-- [ ] 2.3 Extract existing Skill catalog and lifecycle behavior into the Skill handler and adapter-backed placement flow; verify all existing catalog, activation, adoption, fork, reconciliation, and undo tests pass unchanged.
+- [x] 2.2 Define `ResourceHandler` and `AgentAdapter` contracts for detection, inspection, validation, planning, placement, and capabilities; verify domain tests do not require runtime-specific paths.
+- [x] 2.3 Extract existing Skill catalog and lifecycle behavior into the Skill handler and adapter-backed placement flow; verify all existing catalog, activation, adoption, fork, reconciliation, and undo tests pass unchanged.
 - [ ] 2.4 Implement capability comparison and explicit unsupported-capability results; verify no operation plan is generated when a required target capability is absent.
 - [ ] 2.5 Implement read-only agent and resource inventory commands with human-readable and JSON output; verify supported, unavailable, and unsupported agent fixtures are distinguishable.
 - [ ] 2.6 Implement or register the Pi adapter with only verified locations and declared capabilities; verify unsupported resource kinds are reported without writes.

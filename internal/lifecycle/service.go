@@ -13,13 +13,14 @@ import (
 	"github.com/AllenMuu/skill-manager/internal/adapter"
 	"github.com/AllenMuu/skill-manager/internal/catalog"
 	"github.com/AllenMuu/skill-manager/internal/operation"
+	"github.com/AllenMuu/skill-manager/internal/resource"
 )
 
 var (
 	ErrNotConfirmed   = operation.ErrNotConfirmed
 	ErrUnsafePath     = errors.New("refusing unmanaged or unexpected path")
-	ErrForceRequired = errors.New("conflict strategy requires force confirmation")
-	ErrConflict      = errors.New("operation conflicts with existing skill")
+	ErrForceRequired  = errors.New("conflict strategy requires force confirmation")
+	ErrConflict       = errors.New("operation conflicts with existing skill")
 	errConcurrentEdit = errors.New("project skill changed while operation was staged")
 )
 
@@ -136,6 +137,9 @@ func (s *Service) Add(project string, skill catalog.Skill, targets []adapter.Tar
 		if !ok {
 			return plan, fmt.Errorf("unsupported target %q", target)
 		}
+		if err := validateSkillTarget(skill, target); err != nil {
+			return plan, err
+		}
 		path := a.ProjectSkillPath(project, skill.Identifier)
 		if contains(skill.Compatibility, string(target)) == false {
 			plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s is not declared compatible with %s", skill.Identifier, target))
@@ -245,6 +249,9 @@ func (s *Service) AddMany(project string, skills []catalog.Skill, targets []adap
 			a, ok := adapter.For(target)
 			if !ok {
 				return plan, fmt.Errorf("unsupported target %q", target)
+			}
+			if err := validateSkillTarget(skill, target); err != nil {
+				return plan, err
 			}
 			path := a.ProjectSkillPath(project, skill.Identifier)
 			if seen[path] {
@@ -425,13 +432,13 @@ func (s *Service) Adopt(project string, target adapter.Target, identifier string
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return operation.Plan{}, ErrUnsafePath
 	}
-	skills, _, err := catalog.Discover(filepath.Dir(path))
+	detected, err := resource.NewSkillHandler().Detect(resource.DetectionRequest{Kind: resource.Skill, Root: filepath.Dir(path)})
 	if err != nil {
 		return operation.Plan{}, err
 	}
 	var found bool
-	for _, skill := range skills {
-		if skill.Identifier == identifier {
+	for _, skill := range detected {
+		if skill.ID == identifier {
 			found = true
 		}
 	}
@@ -705,16 +712,41 @@ func (s *Service) eligibleConfiguredSkill(identifier, source string) (bool, erro
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return false, nil
 	}
-	skills, _, err := catalog.Discover(filepath.Dir(source))
+	detected, err := resource.NewSkillHandler().Detect(resource.DetectionRequest{Kind: resource.Skill, Root: filepath.Dir(source)})
 	if err != nil {
 		return false, fmt.Errorf("discover skill source %s: %w", source, err)
 	}
-	for _, skill := range skills {
-		if skill.Identifier == identifier && skill.SourcePath == source {
+	for _, skill := range detected {
+		if skill.ID == identifier && skill.Provenance.Source == source {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+// validateSkillTarget composes the Skill handler with the target adapter before
+// any guarded lifecycle plan is confirmed or published.
+func validateSkillTarget(skill catalog.Skill, target adapter.Target) error {
+	handler := resource.NewSkillHandler()
+	managed := resource.SkillResource(skill)
+	if err := handler.Validate(managed); err != nil {
+		return err
+	}
+	a, ok := adapter.ForAgent(target)
+	if !ok {
+		return fmt.Errorf("unsupported target %q", target)
+	}
+	if _, err := a.Inspect(resource.Skill, managed); err != nil {
+		return err
+	}
+	plan, err := a.Plan(resource.Skill, managed)
+	if err != nil {
+		return err
+	}
+	if len(plan.Missing) > 0 {
+		return fmt.Errorf("%w: missing capabilities %v", resource.ErrUnsupportedCapabilities, plan.Missing)
+	}
+	return nil
 }
 func (s *Service) adoptable(path, identifier string) (bool, error) {
 	return s.eligibleConfiguredSkill(identifier, path)
