@@ -99,6 +99,58 @@ skills:
 	}
 }
 
+func TestDiscoverReportsTrailingYAMLDocument(t *testing.T) {
+	root := t.TempDir()
+	writeDefinition(t, root, "trailing.yaml", `version: v1
+id: reviewer
+name: Reviewer
+role: Review
+instructions: Review changes.
+---
+unexpected: document
+`)
+	registry, err := subagent.NewRegistry(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitions, diagnostics, err := registry.Discover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(definitions) != 0 || len(diagnostics) != 1 || !strings.Contains(diagnostics[0].Error(), "multiple") {
+		t.Fatalf("Discover() = (%v, %v), want multiple-document diagnostic", definitions, diagnostics)
+	}
+}
+
+func TestDiscoverRejectsDuplicateIDsWithDiagnosticsForBothFiles(t *testing.T) {
+	root := t.TempDir()
+	definition := `version: v1
+id: reviewer
+name: Reviewer
+role: Review
+instructions: Review changes.
+`
+	writeDefinition(t, root, "first.yaml", definition)
+	writeDefinition(t, root, "second.yaml", definition)
+	registry, err := subagent.NewRegistry(root, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definitions, diagnostics, err := registry.Discover()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(definitions) != 0 || len(diagnostics) != 2 {
+		t.Fatalf("Discover() = (%v, %v), want both duplicates rejected", definitions, diagnostics)
+	}
+	for _, diagnostic := range diagnostics {
+		message := diagnostic.Error()
+		if !strings.Contains(message, "duplicate id \"reviewer\"") || !strings.Contains(message, ".yaml") {
+			t.Errorf("diagnostic = %q, want duplicate ID and counterpart path", message)
+		}
+	}
+}
+
 func TestNewRegistryRejectsRelativeDataRoot(t *testing.T) {
 	if _, err := subagent.NewRegistry("relative", nil); err == nil {
 		t.Fatal("NewRegistry(relative) error = nil")

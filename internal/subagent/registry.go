@@ -4,6 +4,7 @@ package subagent
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -101,7 +102,11 @@ func (r Registry) Discover() ([]Definition, []Diagnostic, error) {
 		return nil, nil, fmt.Errorf("read SubAgent definitions: %w", err)
 	}
 
-	var definitions []Definition
+	type discovered struct {
+		definition Definition
+		path       string
+	}
+	var discoveredDefinitions []discovered
 	var diagnostics []Diagnostic
 	for _, entry := range entries {
 		if entry.IsDir() || !isDefinitionFile(entry.Name()) {
@@ -117,7 +122,26 @@ func (r Registry) Discover() ([]Definition, []Diagnostic, error) {
 			diagnostics = append(diagnostics, Diagnostic{Path: path, Message: err.Error()})
 			continue
 		}
-		definitions = append(definitions, definition)
+		discoveredDefinitions = append(discoveredDefinitions, discovered{definition: definition, path: path})
+	}
+	byID := make(map[string][]discovered, len(discoveredDefinitions))
+	for _, item := range discoveredDefinitions {
+		byID[item.definition.ID] = append(byID[item.definition.ID], item)
+	}
+	var definitions []Definition
+	for _, item := range discoveredDefinitions {
+		duplicates := byID[item.definition.ID]
+		if len(duplicates) > 1 {
+			others := make([]string, 0, len(duplicates)-1)
+			for _, other := range duplicates {
+				if other.path != item.path {
+					others = append(others, other.path)
+				}
+			}
+			diagnostics = append(diagnostics, Diagnostic{Path: item.path, Message: fmt.Sprintf("duplicate id %q; also defined in %s", item.definition.ID, strings.Join(others, ", "))})
+			continue
+		}
+		definitions = append(definitions, item.definition)
 	}
 	sort.Slice(definitions, func(i, j int) bool { return definitions[i].ID < definitions[j].ID })
 	sort.Slice(diagnostics, func(i, j int) bool { return diagnostics[i].Path < diagnostics[j].Path })
@@ -134,6 +158,13 @@ func readDefinition(path string) (Definition, error) {
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&definition); err != nil {
 		return Definition{}, fmt.Errorf("parse canonical v1 definition: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return Definition{}, errors.New("parse canonical v1 definition: multiple YAML documents are not allowed")
+		}
+		return Definition{}, fmt.Errorf("parse canonical v1 definition: trailing YAML document: %w", err)
 	}
 	return definition, nil
 }
