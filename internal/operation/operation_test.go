@@ -79,6 +79,52 @@ func TestPlanRendersChangesAndWarnings(t *testing.T) {
 	}
 }
 
+func TestRecordPlanPersistsPlanSchemaAndResourceMetadata(t *testing.T) {
+	root := t.TempDir()
+	journal := operation.New(filepath.Join(root, "journal.json"))
+	plan := operation.Plan{Version: "v1", ResourceKind: "skill", Operation: "activate"}
+	if err := journal.RecordPlan(plan, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	entry, ok, err := journal.Latest()
+	if err != nil || !ok {
+		t.Fatalf("Latest() = %#v, %v, %v", entry, ok, err)
+	}
+	if entry.Version != "v1" || entry.ResourceKind != "skill" || entry.Operation != "activate" {
+		t.Fatalf("entry metadata = %#v", entry)
+	}
+}
+
+func TestUndoPreviewCarriesLegacyAndVersionedSkillMetadata(t *testing.T) {
+	root := t.TempDir()
+	for _, tc := range []struct {
+		name                  string
+		data                  map[string]any
+		wantVersion, wantKind string
+	}{
+		{name: "legacy", data: map[string]any{"operation": "activate"}, wantVersion: "v1", wantKind: "skill"},
+		{name: "versioned", data: map[string]any{"version": "v1", "resourceKind": "skill", "operation": "activate"}, wantVersion: "v1", wantKind: "skill"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			journalPath := filepath.Join(root, tc.name+".json")
+			contents, err := json.Marshal([]map[string]any{tc.data})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(journalPath, contents, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var preview operation.Plan
+			if err := operation.New(journalPath).UndoLatest(func(p operation.Plan) bool { preview = p; return false }); !errors.Is(err, operation.ErrNotConfirmed) {
+				t.Fatalf("UndoLatest = %v", err)
+			}
+			if preview.Version != tc.wantVersion || preview.ResourceKind != tc.wantKind {
+				t.Fatalf("preview metadata = %#v", preview)
+			}
+		})
+	}
+}
+
 func TestJournalUndoRestoresLatestPreOperationState(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "project", "skill")

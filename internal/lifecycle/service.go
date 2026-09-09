@@ -125,7 +125,7 @@ func (s *Service) Add(project string, skill catalog.Skill, targets []adapter.Tar
 	if !eligible {
 		return operation.Plan{}, fmt.Errorf("%w: library source is missing or not an eligible directory skill", ErrUnsafePath)
 	}
-	plan := operation.Plan{Operation: "activate"}
+	plan := operation.NewPlan("activate")
 	paths := make([]string, 0, len(targets))
 	seen := map[adapter.Target]bool{}
 	for _, target := range targets {
@@ -226,7 +226,7 @@ func (s *Service) AddMany(project string, skills []catalog.Skill, targets []adap
 	if err != nil {
 		return operation.Plan{}, err
 	}
-	plan := operation.Plan{Operation: "activate selected skills"}
+	plan := operation.NewPlan("activate selected skills")
 	var paths, sources []string
 	seen := map[string]bool{}
 	for _, skill := range skills {
@@ -398,7 +398,8 @@ func (s *Service) Remove(project string, target adapter.Target, identifier strin
 	if !managed {
 		return operation.Plan{}, ErrUnsafePath
 	}
-	plan := operation.Plan{Operation: "remove", Changes: []operation.Change{{Path: path, Action: "remove managed link"}}}
+	plan := operation.NewPlan("remove")
+	plan.Changes = []operation.Change{{Path: path, Action: "remove managed link"}}
 	if !s.confirmed(plan) {
 		return plan, ErrNotConfirmed
 	}
@@ -455,7 +456,8 @@ func (s *Service) Adopt(project string, target adapter.Target, identifier string
 	} else if !os.IsNotExist(err) {
 		return operation.Plan{}, err
 	}
-	plan := operation.Plan{Operation: "adopt", Changes: []operation.Change{{Path: libraryPath, Action: "copy project skill into library", Detail: path}, {Path: path, Action: "replace directory with managed link", Detail: libraryPath}}}
+	plan := operation.NewPlan("adopt")
+	plan.Changes = []operation.Change{{Path: libraryPath, Action: "copy project skill into library", Detail: path}, {Path: path, Action: "replace directory with managed link", Detail: libraryPath}}
 	if !s.confirmed(plan) {
 		return plan, ErrNotConfirmed
 	}
@@ -532,7 +534,7 @@ func (s *Service) ForkMany(project, identifier string, targets []adapter.Target)
 	if err := adapter.ValidateIdentifier(identifier); err != nil {
 		return operation.Plan{}, fmt.Errorf("%w: %v", ErrUnsafePath, err)
 	}
-	plan := operation.Plan{Operation: "fork"}
+	plan := operation.NewPlan("fork")
 	paths := make([]string, 0, len(targets))
 	sources := make([]string, 0, len(targets))
 	seen := map[adapter.Target]bool{}

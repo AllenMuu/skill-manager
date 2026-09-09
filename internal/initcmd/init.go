@@ -38,7 +38,7 @@ func (s *Service) Initialize() (operation.Plan, error) {
 	if err := s.verify(); err != nil {
 		return operation.Plan{}, fmt.Errorf("verify CLI availability: %w", err)
 	}
-	plan := operation.Plan{Operation: "init"}
+	plan := operation.NewPlan("init")
 	paths := make([]string, 0, 2)
 	snapshotPaths := make([]string, 0, 4)
 	for _, a := range adapter.Supported() {

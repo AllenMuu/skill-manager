@@ -144,7 +144,7 @@ func AddGitignore(project string, paths []string, confirm func(operation.Plan) b
 	if len(journals) > 0 && journals[0] != nil {
 		journal = journals[0]
 	}
-	plan := operation.Plan{Operation: "update managed-link Git guidance"}
+	plan := operation.NewPlan("update managed-link Git guidance")
 	lines := make([]string, 0, len(paths))
 	for _, path := range paths {
 		info, err := os.Lstat(path)
@@ -268,7 +268,7 @@ func Reconcile(library, project string, journal *operation.Journal, confirm func
 	if err != nil {
 		return operation.Plan{}, err
 	}
-	plan := operation.Plan{Operation: "reconcile"}
+	plan := operation.NewPlan("reconcile")
 	var paths, targets, originals []string
 	for _, a := range adapter.Supported() {
 		root := filepath.Dir(a.ProjectSkillPath(project, "placeholder"))
@@ -440,7 +440,9 @@ func DeleteLibrarySkill(library, identifier string, force bool, confirm func(ope
 	if !ok {
 		return operation.Plan{}, fmt.Errorf("refusing ineligible library skill %q", identifier)
 	}
-	plan := operation.Plan{Operation: "delete library skill", Changes: []operation.Change{{Path: path, Action: "delete library skill"}}, Warnings: []string{"deletion can orphan managed links; run doctor before and after deletion"}}
+	plan := operation.NewPlan("delete library skill")
+	plan.Changes = []operation.Change{{Path: path, Action: "delete library skill"}}
+	plan.Warnings = []string{"deletion can orphan managed links; run doctor before and after deletion"}
 	if confirm == nil || !confirm(plan) {
 		return plan, operation.ErrNotConfirmed
 	}

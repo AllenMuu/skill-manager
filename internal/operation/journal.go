@@ -34,6 +34,13 @@ type Entry struct {
 	After        []Snapshot `json:"after"`
 }
 
+// RecordMetadata describes the versioned resource envelope for a journal
+// record. It is optional so existing Skill callers retain their source API.
+type RecordMetadata struct {
+	Version      string
+	ResourceKind string
+}
+
 // Journal persists reversible operation entries at Path.
 type Journal struct {
 	Path string
@@ -72,12 +79,24 @@ func (j *Journal) Capture(paths []string) ([]Snapshot, error) {
 }
 
 // Record appends a confirmed operation with both pre- and post-operation state.
-func (j *Journal) Record(operation string, before, after []Snapshot) error {
+func (j *Journal) Record(operation string, before, after []Snapshot, metadata ...RecordMetadata) error {
+	plan := Plan{Operation: operation}
+	if len(metadata) > 0 {
+		plan.Version = metadata[0].Version
+		plan.ResourceKind = metadata[0].ResourceKind
+	}
+	return j.RecordPlan(plan, before, after)
+}
+
+// RecordPlan appends a confirmed operation using the plan's versioned
+// resource metadata. Empty metadata retains the legacy Skill defaults.
+func (j *Journal) RecordPlan(plan Plan, before, after []Snapshot) error {
 	entries, err := j.entries()
 	if err != nil {
 		return err
 	}
-	entries = append(entries, Entry{Version: "v1", ResourceKind: "skill", Operation: operation, At: time.Now().UTC(), Before: before, After: after})
+	version, kind := normalizeMetadata(plan.Version, plan.ResourceKind)
+	entries = append(entries, Entry{Version: version, ResourceKind: kind, Operation: plan.Operation, At: time.Now().UTC(), Before: before, After: after})
 	return j.write(entries)
 }
 
@@ -142,7 +161,7 @@ func (j *Journal) UndoLatest(confirm func(Plan) bool) error {
 		return fmt.Errorf("operation journal is empty")
 	}
 	entry := entries[len(entries)-1]
-	plan := Plan{Operation: "undo " + entry.Operation}
+	plan := Plan{Version: entry.Version, ResourceKind: entry.ResourceKind, Operation: "undo " + entry.Operation}
 	for _, snapshot := range entry.Before {
 		plan.Changes = append(plan.Changes, Change{Path: snapshot.Path, Action: "restore pre-operation state"})
 	}
@@ -168,6 +187,16 @@ func (j *Journal) UndoLatest(confirm func(Plan) bool) error {
 		return errors.Join(err, j.Restore(entry.After))
 	}
 	return nil
+}
+
+func normalizeMetadata(version, kind string) (string, string) {
+	if version == "" {
+		version = "v1"
+	}
+	if kind == "" {
+		kind = "skill"
+	}
+	return version, kind
 }
 
 // Restore replaces the supplied explicit paths with their captured state.
