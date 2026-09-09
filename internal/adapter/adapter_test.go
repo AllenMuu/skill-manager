@@ -4,12 +4,115 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/AllenMuu/skill-manager/internal/adapter"
 	"github.com/AllenMuu/skill-manager/internal/operation"
 	"github.com/AllenMuu/skill-manager/internal/resource"
+	"github.com/AllenMuu/skill-manager/internal/subagent"
 )
+
+func TestClaudeCodeSubAgentPlanRendersNativeMarkdownAndSurfacesUnrepresentableFields(t *testing.T) {
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Code Reviewer", Role: "Reviews changes", Instructions: "Review the diff.", Skills: []string{"go-helper"}, Compatibility: resource.Compatibility{Agents: []string{"claude-code"}}, RequiredCapabilities: []resource.Capability{resource.CapabilityMemorySearch}}
+	a, ok := adapter.ForAgent(adapter.ClaudeCode)
+	if !ok {
+		t.Fatal("Claude Code adapter is unavailable")
+	}
+	renderer, ok := a.(adapter.SubAgentAdapter)
+	if !ok {
+		t.Fatal("Claude Code adapter does not expose SubAgent rendering")
+	}
+	plan, err := renderer.PlanSubAgent(definition, adapter.SubAgentRequest{Root: "/project", Scope: adapter.SubAgentProject})
+	if !errors.Is(err, adapter.ErrSubAgentUnsupported) {
+		t.Fatalf("PlanSubAgent() error = %v, want explicit unsupported result", err)
+	}
+	if plan.Destination != filepath.Join("/project", ".claude", "agents", "reviewer.md") {
+		t.Fatalf("destination = %q", plan.Destination)
+	}
+	if plan.Format != "claude-code-markdown" || !strings.Contains(plan.Content, "name: reviewer") || !strings.Contains(plan.Content, "Review the diff.") {
+		t.Fatalf("plan = %#v", plan)
+	}
+	if !containsString(plan.UnsupportedFields, "skills") || !containsString(plan.UnsupportedFields, "compatibility") || !containsCapability(plan.UnsupportedCapabilities, resource.CapabilityMemorySearch) {
+		t.Fatalf("unsupported details = %#v", plan)
+	}
+}
+
+func TestClaudeCodeSubAgentPlanSucceedsWhenCanonicalFieldsAreRepresentable(t *testing.T) {
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Code Reviewer", Role: "Reviews changes", Instructions: "Review the diff.", RequiredCapabilities: []resource.Capability{resource.CapabilityFilesystemWrite}}
+	a, ok := adapter.ForAgent(adapter.ClaudeCode)
+	if !ok {
+		t.Fatal("Claude Code adapter is unavailable")
+	}
+	plan, err := a.PlanSubAgent(definition, adapter.SubAgentRequest{Root: "/project", Scope: adapter.SubAgentProject})
+	if err != nil {
+		t.Fatalf("PlanSubAgent() error = %v", err)
+	}
+	if len(plan.UnsupportedFields) != 0 || len(plan.UnsupportedCapabilities) != 0 {
+		t.Fatalf("plan reports unsupported data = %#v", plan)
+	}
+}
+
+func TestCodexSubAgentPlanRendersNativeTOMLAndSurfacesUnrepresentableFields(t *testing.T) {
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Code Reviewer", Role: "Reviews changes", Instructions: "Review the diff.", Skills: []string{"go-helper"}, Compatibility: resource.Compatibility{Agents: []string{"codex"}}}
+	a, ok := adapter.ForAgent(adapter.Codex)
+	if !ok {
+		t.Fatal("Codex adapter is unavailable")
+	}
+	renderer := a.(adapter.SubAgentAdapter)
+	plan, err := renderer.PlanSubAgent(definition, adapter.SubAgentRequest{Root: "/project", Scope: adapter.SubAgentProject})
+	if !errors.Is(err, adapter.ErrSubAgentUnsupported) {
+		t.Fatalf("PlanSubAgent() error = %v, want explicit unsupported result", err)
+	}
+	if plan.Destination != filepath.Join("/project", ".codex", "agents", "reviewer.toml") {
+		t.Fatalf("destination = %q", plan.Destination)
+	}
+	if plan.Format != "codex-toml" || !strings.Contains(plan.Content, `name = "reviewer"`) || !strings.Contains(plan.Content, "developer_instructions") {
+		t.Fatalf("plan = %#v", plan)
+	}
+	if !containsString(plan.UnsupportedFields, "skills") || !containsString(plan.UnsupportedFields, "compatibility") {
+		t.Fatalf("unsupported fields = %#v", plan.UnsupportedFields)
+	}
+}
+
+func TestPiSubAgentPlanIsExplicitlyUnsupportedAndHasNoDestinationOrContent(t *testing.T) {
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Reviewer", Role: "Reviews", Instructions: "Review."}
+	a, ok := adapter.ForAgent(adapter.Pi)
+	if !ok {
+		t.Fatal("Pi adapter is unavailable")
+	}
+	renderer := a.(adapter.SubAgentAdapter)
+	plan, err := renderer.PlanSubAgent(definition, adapter.SubAgentRequest{Root: "/project", Scope: adapter.SubAgentProject})
+	if !errors.Is(err, adapter.ErrSubAgentUnsupported) {
+		t.Fatalf("PlanSubAgent() error = %v, want explicit unsupported result", err)
+	}
+	if plan.Destination != "" || plan.Content != "" || plan.Format != "" {
+		t.Fatalf("Pi plan would imply a native write: %#v", plan)
+	}
+	for _, field := range []string{"id", "name", "role", "instructions", "skills", "compatibility", "requiredCapabilities"} {
+		if !containsString(plan.UnsupportedFields, field) {
+			t.Errorf("Pi unsupported fields = %v, missing %q", plan.UnsupportedFields, field)
+		}
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsCapability(values []resource.Capability, want resource.Capability) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
 
 func TestSupportedProjectAndGlobalLocations(t *testing.T) {
 	project := t.TempDir()

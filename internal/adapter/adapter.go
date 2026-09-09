@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/AllenMuu/skill-manager/internal/resource"
+	"github.com/AllenMuu/skill-manager/internal/subagent"
 )
 
 // ErrPlacementUnsupported indicates that generic placement has not yet been
@@ -56,6 +57,8 @@ type AgentAdapter interface {
 	Validate(resource.Kind, resource.ManagedResource) error
 	Plan(resource.Kind, resource.ManagedResource) (resource.PlacementPlan, error)
 	Place(resource.PlacementPlan) error
+	InspectSubAgent(subagent.Definition, SubAgentRequest) (SubAgentInspection, error)
+	PlanSubAgent(subagent.Definition, SubAgentRequest) (SubAgentPlan, error)
 }
 
 // CompareCapabilities compares a resource request with a target adapter's
@@ -159,9 +162,19 @@ func (a directoryAdapter) GlobalSkillPath(home, identifier string) string {
 	return filepath.Join(home, dir, "skills", identifier)
 }
 
-func (a directoryAdapter) Supports(kind resource.Kind) bool { return kind == resource.Skill }
+func (a directoryAdapter) Supports(kind resource.Kind) bool {
+	if kind == resource.Skill {
+		return true
+	}
+	return kind == resource.SubAgent && a.target != Pi
+}
 
-func (a directoryAdapter) ResourceKinds() []resource.Kind { return []resource.Kind{resource.Skill} }
+func (a directoryAdapter) ResourceKinds() []resource.Kind {
+	if a.target == Pi {
+		return []resource.Kind{resource.Skill}
+	}
+	return []resource.Kind{resource.Skill, resource.SubAgent}
+}
 
 func (a directoryAdapter) Capabilities(kind resource.Kind) []resource.Capability {
 	if !a.Supports(kind) {
