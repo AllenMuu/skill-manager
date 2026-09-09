@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/AllenMuu/skill-manager/internal/catalog"
+	"github.com/AllenMuu/skill-manager/internal/operation"
 )
 
 // ErrDetectionUnsupported indicates that a handler requires a concrete
@@ -108,6 +109,13 @@ type PlacementPlan struct {
 	Capabilities []Capability
 	Missing      []Capability
 	Warnings     []string
+	// Filesystem placement fields are populated only by an integration that
+	// explicitly opts into guarded local placement.
+	Destination string
+	Conflict    string
+	Force       bool
+	Journal     *operation.Journal
+	Confirm     func(operation.Plan) bool
 }
 
 // ResourceHandler owns discovery, inspection, validation, and lifecycle

@@ -34,6 +34,9 @@ type FilesystemPlacementOptions struct {
 	Force       bool
 	Journal     *operation.Journal
 	Confirm     func(operation.Plan) bool
+	// BeforePublish is a test and integration seam invoked after the final
+	// confirmation re-check and before publication.
+	BeforePublish func() error
 }
 
 // PlaceFilesystem publishes a source directory as an absolute symlink at the
@@ -92,8 +95,22 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 	if err != nil {
 		return preview, err
 	}
+	if options.BeforePublish != nil {
+		if err := options.BeforePublish(); err != nil {
+			return preview, err
+		}
+	}
+	if conflict && !matchesSnapshot(before[0]) {
+		return preview, ErrUnsafePath
+	}
 	if err := publishLink(destination, source, conflict); err != nil {
-		return preview, errors.Join(err, options.Journal.Restore(before))
+		// A rejected late conflict has not mutated the destination; restoring an
+		// empty snapshot here would wrongly delete the unmanaged file that won
+		// the race.
+		if conflict {
+			return preview, errors.Join(err, options.Journal.Restore(before))
+		}
+		return preview, err
 	}
 	after, err := options.Journal.Capture([]string{destination})
 	if err != nil {
@@ -103,6 +120,28 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 		return preview, errors.Join(err, options.Journal.Restore(before))
 	}
 	return preview, nil
+}
+
+func matchesSnapshot(snapshot operation.Snapshot) bool {
+	current, err := os.Lstat(snapshot.Path)
+	if err != nil {
+		return false
+	}
+	backup, err := os.Lstat(snapshot.Backup)
+	if err != nil || current.Mode() != backup.Mode() {
+		return false
+	}
+	if current.Mode()&os.ModeSymlink != 0 {
+		currentTarget, currentErr := os.Readlink(snapshot.Path)
+		backupTarget, backupErr := os.Readlink(snapshot.Backup)
+		return currentErr == nil && backupErr == nil && currentTarget == backupTarget
+	}
+	if current.Mode().IsRegular() {
+		currentBytes, currentErr := os.ReadFile(snapshot.Path)
+		backupBytes, backupErr := os.ReadFile(snapshot.Backup)
+		return currentErr == nil && backupErr == nil && string(currentBytes) == string(backupBytes)
+	}
+	return current.IsDir() == backup.IsDir()
 }
 
 func safePlacementPaths(resource resource.ManagedResource, destination string) (string, string, error) {
@@ -161,25 +200,12 @@ func publishLink(destination, source string, replace bool) error {
 		}
 	} else if target, err := os.Readlink(destination); err == nil && target == source {
 		return nil
-	}
-	tmp, err := os.CreateTemp(filepath.Dir(destination), ".skill-manager-link-")
-	if err != nil {
+	} else if _, err := os.Lstat(destination); err == nil {
+		return ErrUnsafePath
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	tmpPath := tmp.Name()
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-	if err := os.Remove(tmpPath); err != nil {
-		return err
-	}
-	if err := os.Symlink(source, tmpPath); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, destination); err != nil {
-		os.Remove(tmpPath)
-		return err
-	}
-	return nil
+	// Symlink itself is an atomic create and refuses an existing destination,
+	// unlike Rename which would overwrite a late unmanaged path.
+	return os.Symlink(source, destination)
 }

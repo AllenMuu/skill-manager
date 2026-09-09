@@ -14,6 +14,10 @@ import (
 // wired to the guarded lifecycle implementation.
 var ErrPlacementUnsupported = errors.New("generic adapter placement is not supported")
 
+// ErrPlacementConfiguration indicates that a guarded placement context was
+// not supplied to the generic adapter seam.
+var ErrPlacementConfiguration = errors.New("filesystem placement is not configured")
+
 // Target identifies a supported coding agent.
 type Target string
 
@@ -130,7 +134,17 @@ func (a directoryAdapter) Place(plan resource.PlacementPlan) error {
 	if len(plan.Missing) > 0 {
 		return fmt.Errorf("%w: missing capabilities %v", resource.ErrUnsupportedCapabilities, plan.Missing)
 	}
-	return ErrPlacementUnsupported
+	if plan.Destination == "" || plan.Journal == nil {
+		return ErrPlacementConfiguration
+	}
+	_, err := PlaceFilesystem(plan, FilesystemPlacementOptions{
+		Destination: plan.Destination,
+		Conflict:    ConflictStrategy(plan.Conflict),
+		Force:       plan.Force,
+		Journal:     plan.Journal,
+		Confirm:     plan.Confirm,
+	})
+	return err
 }
 
 func (a directoryAdapter) ProjectSkillPath(project, identifier string) string {
