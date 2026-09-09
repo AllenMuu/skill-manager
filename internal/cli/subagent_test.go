@@ -138,6 +138,99 @@ skills:
 	}
 }
 
+func TestSubAgentsInstallUndoAndRemoveThroughCLI(t *testing.T) {
+	root, project, library := t.TempDir(), t.TempDir(), t.TempDir()
+	writeSubAgent(t, root, "reviewer.yaml", `version: v1
+id: reviewer
+name: Reviewer
+role: Review
+instructions: Review changes.
+`)
+	config := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(config, []byte("library: "+library+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := cli.NewRootCommand()
+	output := &bytes.Buffer{}
+	command.SetOut(output)
+	command.SetErr(output)
+	command.SetArgs([]string{"subagents", "install", "reviewer", "--root", root, "--library", library, "--project", project, "--target", "codex", "--yes"})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	destination := filepath.Join(project, ".codex", "agents", "reviewer.toml")
+	if _, err := os.Stat(destination); err != nil {
+		t.Fatalf("installed SubAgent missing: %v", err)
+	}
+
+	undo := cli.NewRootCommand()
+	undo.SetOut(&bytes.Buffer{})
+	undo.SetErr(&bytes.Buffer{})
+	undo.SetArgs([]string{"--config", config, "undo", "--project", project, "--yes"})
+	if err := undo.Execute(); err != nil {
+		t.Fatalf("undo: %v", err)
+	}
+	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+		t.Fatalf("undo left installation: %v", err)
+	}
+
+	installAgain := cli.NewRootCommand()
+	installAgain.SetOut(&bytes.Buffer{})
+	installAgain.SetErr(&bytes.Buffer{})
+	installAgain.SetArgs([]string{"subagents", "install", "reviewer", "--root", root, "--library", library, "--project", project, "--target", "codex", "--yes"})
+	if err := installAgain.Execute(); err != nil {
+		t.Fatalf("reinstall: %v", err)
+	}
+	remove := cli.NewRootCommand()
+	remove.SetOut(&bytes.Buffer{})
+	remove.SetErr(&bytes.Buffer{})
+	remove.SetArgs([]string{"subagents", "remove", "reviewer", "--root", root, "--library", library, "--project", project, "--target", "codex", "--yes"})
+	if err := remove.Execute(); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+		t.Fatalf("remove left installation: %v", err)
+	}
+}
+
+func TestSubAgentsInstallRejectsUnsupportedTargetWithoutWriting(t *testing.T) {
+	root, project, library := t.TempDir(), t.TempDir(), t.TempDir()
+	writeSubAgent(t, root, "reviewer.yaml", "version: v1\nid: reviewer\nname: Reviewer\nrole: Review\ninstructions: Review changes.\n")
+	command := cli.NewRootCommand()
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"subagents", "install", "reviewer", "--root", root, "--library", library, "--project", project, "--target", "pi", "--yes"})
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("install error = %v, want unsupported", err)
+	}
+	if _, err := os.Stat(filepath.Join(project, ".pi")); !os.IsNotExist(err) {
+		t.Fatalf("unsupported install wrote files: %v", err)
+	}
+}
+
+func TestSubAgentsInstallRefusesCLIConflictWithoutForce(t *testing.T) {
+	root, project, library := t.TempDir(), t.TempDir(), t.TempDir()
+	writeSubAgent(t, root, "reviewer.yaml", "version: v1\nid: reviewer\nname: Reviewer\nrole: Review\ninstructions: Review changes.\n")
+	destination := filepath.Join(project, ".codex", "agents", "reviewer.toml")
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("user-owned"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := cli.NewRootCommand()
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"subagents", "install", "reviewer", "--root", root, "--library", library, "--project", project, "--target", "codex", "--conflict", "replace", "--yes"})
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "requires --force") {
+		t.Fatalf("install error = %v, want force requirement", err)
+	}
+	content, err := os.ReadFile(destination)
+	if err != nil || string(content) != "user-owned" {
+		t.Fatalf("conflict content = %q, %v", content, err)
+	}
+}
+
 func TestSubAgentsConfiguredMissingLibraryReturnsError(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(t.TempDir(), "agent-manager.yaml")

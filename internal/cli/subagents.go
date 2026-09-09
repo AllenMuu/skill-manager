@@ -9,8 +9,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/AllenMuu/skill-manager/internal/adapter"
 	"github.com/AllenMuu/skill-manager/internal/catalog"
 	"github.com/AllenMuu/skill-manager/internal/config"
+	"github.com/AllenMuu/skill-manager/internal/operation"
 	"github.com/AllenMuu/skill-manager/internal/resource"
 	"github.com/AllenMuu/skill-manager/internal/subagent"
 	"github.com/spf13/cobra"
@@ -45,7 +47,93 @@ func newSubAgentsCommand(rootOptions *rootOptions) *cobra.Command {
 	command.AddCommand(newSubAgentListCommand(rootOptions, options))
 	command.AddCommand(newSubAgentShowCommand(rootOptions, options))
 	command.AddCommand(newSubAgentValidateCommand(rootOptions, options))
+	command.AddCommand(newSubAgentInstallCommand(rootOptions, options))
+	command.AddCommand(newSubAgentRemoveCommand(rootOptions, options))
 	return command
+}
+
+func newSubAgentInstallCommand(rootOptions *rootOptions, options *subAgentOptions) *cobra.Command {
+	var project, target, conflict string
+	var yes, force bool
+	cmd := &cobra.Command{Use: "install <id>", Short: "Install a canonical SubAgent for a target agent", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if target == "" {
+			return errors.New("--target is required")
+		}
+		if conflict != "" && conflict != string(adapter.ConflictReplace) {
+			return fmt.Errorf("unknown conflict strategy %q", conflict)
+		}
+		if conflict != "" && !force {
+			return fmt.Errorf("conflict strategy %q requires --force confirmation", conflict)
+		}
+		_, definitions, diagnostics, err := discoverSubAgents(rootOptions, options)
+		if err != nil {
+			return err
+		}
+		var definition subagent.Definition
+		found := false
+		for _, item := range definitions {
+			if item.ID == args[0] {
+				definition, found = item, true
+				break
+			}
+		}
+		if !found {
+			return unknownSubAgentError(args[0], definitions, diagnostics)
+		}
+		request := adapter.SubAgentRequest{Root: project, Scope: adapter.SubAgentProject}
+		journal := operation.New(filepath.Join(project, ".skill-manager", "journal.json"))
+		plan, err := adapter.InstallSubAgent(definition, request, adapter.SubAgentFilesystemOptions{Target: adapter.Target(target), SourceRoot: options.root, Conflict: adapter.ConflictStrategy(conflict), Force: force, Journal: journal, Confirm: func(p operation.Plan) bool {
+			if _, printErr := fmt.Fprint(cmd.OutOrStdout(), p.String()); printErr != nil {
+				return false
+			}
+			return yes
+		}})
+		_ = plan
+		return err
+	}}
+	cmd.Flags().StringVar(&project, "project", ".", "project root")
+	cmd.Flags().StringVar(&target, "target", "", "target agent (claude-code or codex)")
+	cmd.Flags().StringVar(&conflict, "conflict", "", "conflict strategy for existing destination paths (replace)")
+	cmd.Flags().BoolVar(&force, "force", false, "confirm replacement of unmanaged content")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the displayed plan")
+	return cmd
+}
+
+func newSubAgentRemoveCommand(rootOptions *rootOptions, options *subAgentOptions) *cobra.Command {
+	var project, target string
+	var yes bool
+	cmd := &cobra.Command{Use: "remove <id>", Short: "Remove an installed SubAgent", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		if target == "" {
+			return errors.New("--target is required")
+		}
+		_, definitions, diagnostics, err := discoverSubAgents(rootOptions, options)
+		if err != nil {
+			return err
+		}
+		var definition subagent.Definition
+		found := false
+		for _, item := range definitions {
+			if item.ID == args[0] {
+				definition, found = item, true
+				break
+			}
+		}
+		if !found {
+			return unknownSubAgentError(args[0], definitions, diagnostics)
+		}
+		journal := operation.New(filepath.Join(project, ".skill-manager", "journal.json"))
+		_, err = adapter.RemoveSubAgent(definition, adapter.SubAgentRequest{Root: project, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{Target: adapter.Target(target), SourceRoot: options.root, Journal: journal, Confirm: func(p operation.Plan) bool {
+			if _, printErr := fmt.Fprint(cmd.OutOrStdout(), p.String()); printErr != nil {
+				return false
+			}
+			return yes
+		}})
+		return err
+	}}
+	cmd.Flags().StringVar(&project, "project", ".", "project root")
+	cmd.Flags().StringVar(&target, "target", "", "target agent")
+	cmd.Flags().BoolVar(&yes, "yes", false, "confirm the displayed plan")
+	return cmd
 }
 
 func newSubAgentListCommand(rootOptions *rootOptions, options *subAgentOptions) *cobra.Command {
