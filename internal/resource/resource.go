@@ -2,10 +2,19 @@
 package resource
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 )
+
+// ErrDetectionUnsupported indicates that a handler requires a concrete
+// storage integration before it can discover resources.
+var ErrDetectionUnsupported = errors.New("resource detection is not supported")
+
+// ErrUnsupportedCapabilities indicates that a target cannot represent a
+// requested resource capability.
+var ErrUnsupportedCapabilities = errors.New("resource capabilities are unsupported")
 
 // Kind identifies a managed resource domain.
 type Kind string
@@ -103,7 +112,7 @@ func (SkillHandler) Detect(request DetectionRequest) ([]ManagedResource, error) 
 	if request.Kind != "" && request.Kind != Skill {
 		return nil, fmt.Errorf("Skill handler does not support resource kind %q", request.Kind)
 	}
-	return nil, nil
+	return nil, ErrDetectionUnsupported
 }
 
 func (h SkillHandler) Inspect(managed ManagedResource) (Inspection, error) {

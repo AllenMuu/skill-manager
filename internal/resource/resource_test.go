@@ -1,6 +1,7 @@
 package resource_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -88,5 +89,15 @@ func TestResourceHandlerContractIsAgentNeutral(t *testing.T) {
 	}
 	if plan.Resource.ID != item.ID {
 		t.Fatalf("Plan() resource ID = %q, want %q", plan.Resource.ID, item.ID)
+	}
+}
+
+func TestSkillHandlerDetectionIsExplicitlyUnsupported(t *testing.T) {
+	handler := resource.NewSkillHandler()
+	if _, err := handler.Detect(resource.DetectionRequest{Kind: resource.Skill}); !errors.Is(err, resource.ErrDetectionUnsupported) {
+		t.Fatalf("Detect(valid) error = %v, want ErrDetectionUnsupported", err)
+	}
+	if _, err := handler.Detect(resource.DetectionRequest{Kind: resource.Memory}); err == nil {
+		t.Fatal("Detect(invalid) error = nil")
 	}
 }

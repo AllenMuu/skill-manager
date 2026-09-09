@@ -1,6 +1,7 @@
 package adapter_test
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
@@ -54,7 +55,7 @@ func TestValidateIdentifierRejectsTraversalAndPathForms(t *testing.T) {
 }
 
 func TestSupportedAdaptersExposeAgentNeutralLifecycleContract(t *testing.T) {
-	for _, a := range adapter.Supported() {
+	for _, a := range adapter.SupportedAgents() {
 		var contract adapter.AgentAdapter = a
 		status := contract.Detect()
 		if status.Target != a.Target() || !status.Available {
@@ -71,5 +72,30 @@ func TestSupportedAdaptersExposeAgentNeutralLifecycleContract(t *testing.T) {
 		if plan.Resource.ID != item.ID {
 			t.Fatalf("Plan() resource ID = %q, want %q", plan.Resource.ID, item.ID)
 		}
+	}
+}
+
+func TestAdapterPlacementRejectsUnimplementedMutation(t *testing.T) {
+	a, ok := adapter.ForAgent(adapter.Codex)
+	if !ok {
+		t.Fatal("Codex adapter is unavailable")
+	}
+	plan, err := a.Plan(resource.Skill, resource.ManagedResource{Version: "v1", ID: "demo", Kind: resource.Skill})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Place(plan); !errors.Is(err, adapter.ErrPlacementUnsupported) {
+		t.Fatalf("Place() error = %v, want ErrPlacementUnsupported", err)
+	}
+}
+
+func TestLegacyAdapterAccessorsRemainAssignable(t *testing.T) {
+	var legacy adapter.Adapter
+	legacy, ok := adapter.For(adapter.Codex)
+	if !ok || legacy == nil {
+		t.Fatal("For() did not return a legacy Adapter")
+	}
+	if got := adapter.Supported(); len(got) == 0 {
+		t.Fatal("Supported() returned no legacy adapters")
 	}
 }

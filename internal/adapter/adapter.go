@@ -2,12 +2,17 @@
 package adapter
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/AllenMuu/skill-manager/internal/resource"
 )
+
+// ErrPlacementUnsupported indicates that generic placement has not yet been
+// wired to the guarded lifecycle implementation.
+var ErrPlacementUnsupported = errors.New("generic adapter placement is not supported")
 
 // Target identifies a supported coding agent.
 type Target string
@@ -99,7 +104,13 @@ func (a directoryAdapter) Plan(kind resource.Kind, managed resource.ManagedResou
 // Place validates an adapter-neutral plan. Filesystem mutations continue to
 // use the existing explicit path methods and guarded lifecycle services.
 func (a directoryAdapter) Place(plan resource.PlacementPlan) error {
-	return a.Validate(plan.Resource.Kind, plan.Resource)
+	if err := a.Validate(plan.Resource.Kind, plan.Resource); err != nil {
+		return err
+	}
+	if len(plan.Missing) > 0 {
+		return fmt.Errorf("%w: missing capabilities %v", resource.ErrUnsupportedCapabilities, plan.Missing)
+	}
+	return ErrPlacementUnsupported
 }
 
 func (a directoryAdapter) ProjectSkillPath(project, identifier string) string {
@@ -141,7 +152,13 @@ var supported = map[Target]AgentAdapter{
 }
 
 // For returns the adapter for target when that target is supported.
-func For(target Target) (AgentAdapter, bool) {
+func For(target Target) (Adapter, bool) {
+	a, ok := supported[target]
+	return a, ok
+}
+
+// ForAgent returns the richer lifecycle contract for target integrations.
+func ForAgent(target Target) (AgentAdapter, bool) {
 	a, ok := supported[target]
 	return a, ok
 }
@@ -155,6 +172,11 @@ func ValidateIdentifier(identifier string) error {
 }
 
 // Supported returns all supported adapters in stable target order.
-func Supported() []AgentAdapter {
+func Supported() []Adapter {
+	return []Adapter{supported[ClaudeCode], supported[Codex], supported[Pi]}
+}
+
+// SupportedAgents returns adapters with the agent-neutral lifecycle contract.
+func SupportedAgents() []AgentAdapter {
 	return []AgentAdapter{supported[ClaudeCode], supported[Codex], supported[Pi]}
 }
