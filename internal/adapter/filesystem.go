@@ -19,6 +19,7 @@ var (
 	ErrUnsafePath = errors.New("refusing unmanaged or unexpected path")
 	// ErrNotConfirmed indicates that no mutation was authorized.
 	ErrNotConfirmed = operation.ErrNotConfirmed
+	errLateConflict = errors.New("destination changed during guarded replacement")
 )
 
 // ConflictStrategy controls an existing destination. The zero value refuses
@@ -38,6 +39,9 @@ type FilesystemPlacementOptions struct {
 	// BeforePublish is a test and integration seam invoked after the final
 	// confirmation re-check and before publication.
 	BeforePublish func() error
+	// BeforeRemove is invoked after an existing destination is atomically
+	// staged and immediately before its staged copy would be discarded.
+	BeforeRemove func() error
 }
 
 // PlaceFilesystem publishes a source directory as an absolute symlink at the
@@ -104,11 +108,11 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 	if conflict && !matchesSnapshot(before[0]) {
 		return preview, ErrUnsafePath
 	}
-	if err := publishLink(destination, source, conflict); err != nil {
+	if err := publishLink(destination, source, conflict, before[0], options.BeforeRemove); err != nil {
 		// A rejected late conflict has not mutated the destination; restoring an
 		// empty snapshot here would wrongly delete the unmanaged file that won
 		// the race.
-		if conflict {
+		if conflict && !errors.Is(err, errLateConflict) {
 			return preview, errors.Join(err, options.Journal.Restore(before))
 		}
 		return preview, err
@@ -250,12 +254,36 @@ func destinationConflict(destination, source string) (bool, error) {
 	return true, nil
 }
 
-func publishLink(destination, source string, replace bool) error {
+func publishLink(destination, source string, replace bool, snapshot operation.Snapshot, beforeRemove func() error) error {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
 	}
 	if replace {
-		if err := os.RemoveAll(destination); err != nil {
+		stageRoot, err := os.MkdirTemp(filepath.Dir(destination), ".skill-manager-replace-")
+		if err != nil {
+			return err
+		}
+		stage := filepath.Join(stageRoot, "existing")
+		if err := os.Rename(destination, stage); err != nil {
+			os.RemoveAll(stageRoot)
+			return err
+		}
+		if beforeRemove != nil {
+			if err := beforeRemove(); err != nil {
+				return err
+			}
+		}
+		if _, err := os.Lstat(destination); err == nil {
+			// A new owner appeared after staging. Leave it untouched and retain
+			// the staged prior content for recovery rather than overwriting it.
+			return errors.Join(ErrUnsafePath, errLateConflict)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if !pathsMatch(stage, snapshot.Backup) {
+			return errors.Join(ErrUnsafePath, errLateConflict)
+		}
+		if err := os.RemoveAll(stageRoot); err != nil {
 			return err
 		}
 	} else if target, err := os.Readlink(destination); err == nil && target == source {
