@@ -2,10 +2,12 @@ package adapter_test
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/AllenMuu/skill-manager/internal/adapter"
+	"github.com/AllenMuu/skill-manager/internal/operation"
 	"github.com/AllenMuu/skill-manager/internal/resource"
 )
 
@@ -179,5 +181,102 @@ func TestLegacyAdapterAccessorsRemainAssignable(t *testing.T) {
 	}
 	if got := adapter.Supported(); len(got) == 0 {
 		t.Fatal("Supported() returned no legacy adapters")
+	}
+}
+
+func TestPlaceFilesystemRefusesUnmanagedConflictWithoutForce(t *testing.T) {
+	source := t.TempDir()
+	destination := filepath.Join(t.TempDir(), "demo")
+	if err := os.WriteFile(destination, []byte("user-owned"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := resource.PlacementPlan{Resource: resource.ManagedResource{
+		Version: "v1", ID: "demo", Kind: resource.Skill,
+		Provenance: resource.Provenance{Source: source},
+	}}
+	journal := operation.New(filepath.Join(t.TempDir(), "journal.json"))
+	_, err := adapter.PlaceFilesystem(plan, adapter.FilesystemPlacementOptions{
+		Destination: destination,
+		Conflict:    adapter.ConflictReplace,
+		Journal:     journal,
+		Confirm:     func(operation.Plan) bool { t.Fatal("confirmation must not be requested"); return true },
+	})
+	if !errors.Is(err, adapter.ErrForceRequired) {
+		t.Fatalf("PlaceFilesystem() error = %v, want force-required", err)
+	}
+	got, readErr := os.ReadFile(destination)
+	if readErr != nil || string(got) != "user-owned" {
+		t.Fatalf("unmanaged destination changed: %q, %v", got, readErr)
+	}
+}
+
+func TestPlaceFilesystemRequiresConfirmationAndJournalsReplacement(t *testing.T) {
+	source := t.TempDir()
+	if err := os.WriteFile(filepath.Join(source, "run.sh"), []byte("#!/bin/sh\nprintf unsafe\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "demo")
+	if err := os.WriteFile(destination, []byte("user-owned"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	journal := operation.New(filepath.Join(t.TempDir(), "journal.json"))
+	confirmed := false
+	plan := resource.PlacementPlan{Resource: resource.ManagedResource{
+		Version: "v1", ID: "demo", Kind: resource.Skill,
+		Provenance: resource.Provenance{Source: source},
+	}}
+	preview, err := adapter.PlaceFilesystem(plan, adapter.FilesystemPlacementOptions{
+		Destination: destination,
+		Conflict:    adapter.ConflictReplace,
+		Force:       true,
+		Journal:     journal,
+		Confirm: func(p operation.Plan) bool {
+			confirmed = true
+			return len(p.Changes) == 1
+		},
+	})
+	if err != nil {
+		t.Fatalf("PlaceFilesystem() error = %v", err)
+	}
+	if !confirmed || len(preview.Changes) != 1 {
+		t.Fatalf("preview = %#v, confirmed = %v", preview, confirmed)
+	}
+	target, err := os.Readlink(destination)
+	if err != nil || target != source {
+		t.Fatalf("destination = %q, %v; want link to source", target, err)
+	}
+	entry, ok, err := journal.Latest()
+	if err != nil || !ok || len(entry.Before) != 1 {
+		t.Fatalf("journal latest = %#v, %v, %v", entry, ok, err)
+	}
+	if err := journal.UndoLatest(func(operation.Plan) bool { return true }); err != nil {
+		t.Fatalf("UndoLatest() error = %v", err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil || string(got) != "user-owned" {
+		t.Fatalf("undo restored %q, %v; want unmanaged content", got, err)
+	}
+}
+
+func TestPlaceFilesystemDoesNotExecuteExecutableResourceContent(t *testing.T) {
+	source := t.TempDir()
+	marker := filepath.Join(t.TempDir(), "executed")
+	script := filepath.Join(source, "run.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "demo")
+	journal := operation.New(filepath.Join(t.TempDir(), "journal.json"))
+	plan := resource.PlacementPlan{Resource: resource.ManagedResource{
+		Version: "v1", ID: "demo", Kind: resource.Skill,
+		Provenance: resource.Provenance{Source: source},
+	}}
+	if _, err := adapter.PlaceFilesystem(plan, adapter.FilesystemPlacementOptions{
+		Destination: destination, Journal: journal, Confirm: func(operation.Plan) bool { return true },
+	}); err != nil {
+		t.Fatalf("PlaceFilesystem() error = %v", err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("resource executable ran; marker stat error = %v", err)
 	}
 }
