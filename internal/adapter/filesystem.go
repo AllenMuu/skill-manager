@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/AllenMuu/skill-manager/internal/operation"
 	"github.com/AllenMuu/skill-manager/internal/resource"
@@ -32,10 +33,14 @@ const ConflictReplace ConflictStrategy = "replace"
 // Resource content is treated as opaque bytes and is never interpreted.
 type FilesystemPlacementOptions struct {
 	Destination string
-	Conflict    ConflictStrategy
-	Force       bool
-	Journal     *operation.Journal
-	Confirm     func(operation.Plan) bool
+	// SourceContent optionally materializes a managed regular-file source after
+	// confirmation. It is used by rendered SubAgents; nil preserves the
+	// directory-backed Skill behavior.
+	SourceContent []byte
+	Conflict      ConflictStrategy
+	Force         bool
+	Journal       *operation.Journal
+	Confirm       func(operation.Plan) bool
 	// BeforePublish is a test and integration seam invoked after the final
 	// confirmation re-check and before publication.
 	BeforePublish func() error
@@ -61,9 +66,13 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 		return operation.Plan{}, err
 	}
 	if info, err := os.Lstat(source); err != nil {
-		return operation.Plan{}, fmt.Errorf("inspect resource source: %w", err)
-	} else if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return operation.Plan{}, fmt.Errorf("%w: resource source must be a directory", ErrUnsafePath)
+		if !os.IsNotExist(err) || options.SourceContent == nil {
+			return operation.Plan{}, fmt.Errorf("inspect resource source: %w", err)
+		}
+	} else if (plan.Resource.Kind == resource.SubAgent && info.Mode().IsRegular()) || (info.IsDir() && info.Mode()&os.ModeSymlink == 0) {
+		// Rendered SubAgents are regular files; Skills remain directories.
+	} else {
+		return operation.Plan{}, fmt.Errorf("%w: resource source must be a directory or managed SubAgent file", ErrUnsafePath)
 	}
 	conflict, err := destinationConflict(destination, source)
 	if err != nil {
@@ -88,8 +97,10 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 	// Re-check the source and destination after confirmation to close the
 	// concurrent-edit window. Capture happens only after confirmation so a
 	// declined preview leaves no journal backup behind.
-	if err := verifySource(source); err != nil {
-		return preview, err
+	if options.SourceContent == nil {
+		if err := verifySource(source, plan.Resource.Kind == resource.SubAgent); err != nil {
+			return preview, err
+		}
 	}
 	conflict, err = destinationConflict(destination, source)
 	if err != nil {
@@ -98,23 +109,39 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 	if conflict && (options.Conflict != ConflictReplace || !options.Force) {
 		return preview, ErrUnsafePath
 	}
-	before, err := options.Journal.Capture([]string{destination})
+	paths := []string{destination}
+	if options.SourceContent != nil {
+		paths = append([]string{source}, paths...)
+	}
+	before, err := options.Journal.Capture(paths)
 	if err != nil {
 		return preview, err
 	}
+	if options.SourceContent != nil {
+		if err := writeManagedSource(source, options.SourceContent); err != nil {
+			return preview, errors.Join(err, options.Journal.Restore(before))
+		}
+		if err := verifySource(source, true); err != nil {
+			return preview, errors.Join(err, options.Journal.Restore(before))
+		}
+	}
 	if options.BeforePublish != nil {
 		if err := options.BeforePublish(); err != nil {
+			if options.SourceContent != nil {
+				return preview, errors.Join(err, options.Journal.Restore(before))
+			}
 			return preview, err
 		}
 	}
-	if conflict && !matchesSnapshot(before[0]) {
+	conflictSnapshot := before[len(before)-1]
+	if conflict && !matchesSnapshot(conflictSnapshot) {
 		return preview, ErrUnsafePath
 	}
-	if err := publishLink(destination, source, conflict, before[0], options.BeforeRemove, options.BeforeFinalPublish); err != nil {
+	if err := publishLink(destination, source, conflict, conflictSnapshot, options.BeforeRemove, options.BeforeFinalPublish); err != nil {
 		// A rejected late conflict has not mutated the destination; restoring an
 		// empty snapshot here would wrongly delete the unmanaged file that won
 		// the race.
-		if conflict && !errors.Is(err, errLateConflict) {
+		if options.SourceContent != nil || (conflict && !errors.Is(err, errLateConflict)) {
 			return preview, errors.Join(err, options.Journal.Restore(before))
 		}
 		return preview, err
@@ -210,11 +237,11 @@ func pathsMatch(current, backup string) bool {
 	return true
 }
 
-func safePlacementPaths(resource resource.ManagedResource, destination string) (string, string, error) {
-	if resource.Provenance.Source == "" || destination == "" {
+func safePlacementPaths(managed resource.ManagedResource, destination string) (string, string, error) {
+	if managed.Provenance.Source == "" || destination == "" {
 		return "", "", fmt.Errorf("%w: source and destination are required", ErrUnsafePath)
 	}
-	source, err := filepath.Abs(resource.Provenance.Source)
+	source, err := filepath.Abs(managed.Provenance.Source)
 	if err != nil {
 		return "", "", fmt.Errorf("%w: source and destination are required", ErrUnsafePath)
 	}
@@ -222,21 +249,46 @@ func safePlacementPaths(resource resource.ManagedResource, destination string) (
 	if err != nil || source == destination {
 		return "", "", fmt.Errorf("%w: source and destination must differ", ErrUnsafePath)
 	}
-	if filepath.Base(destination) != resource.ID {
+	base := filepath.Base(destination)
+	if managed.Kind == resource.SubAgent {
+		if strings.TrimSuffix(base, filepath.Ext(base)) != managed.ID {
+			return "", "", fmt.Errorf("%w: destination basename does not match resource identifier", ErrUnsafePath)
+		}
+	} else if base != managed.ID {
 		return "", "", fmt.Errorf("%w: destination basename does not match resource identifier", ErrUnsafePath)
 	}
 	return source, destination, nil
 }
 
-func verifySource(source string) error {
+func verifySource(source string, allowFile bool) error {
 	info, err := os.Lstat(source)
 	if err != nil {
 		return fmt.Errorf("inspect resource source: %w", err)
 	}
-	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%w: resource source must remain a directory", ErrUnsafePath)
+	if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !(allowFile && info.Mode().IsRegular())) {
+		return fmt.Errorf("%w: resource source must remain a directory or managed file", ErrUnsafePath)
 	}
 	return nil
+}
+
+func writeManagedSource(path string, content []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".agent-manager-render-")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if _, err := tmp.Write(content); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 func destinationConflict(destination, source string) (bool, error) {

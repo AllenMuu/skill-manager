@@ -590,3 +590,89 @@ func TestPlaceFilesystemDoesNotExecuteExecutableResourceContent(t *testing.T) {
 		t.Fatalf("resource executable ran; marker stat error = %v", err)
 	}
 }
+
+func TestInstallAndRemoveSubAgentIsJournaledAndUndoable(t *testing.T) {
+	root := t.TempDir()
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Reviewer", Role: "Reviews", Instructions: "Review changes."}
+	destination := filepath.Join(root, ".claude", "agents", "reviewer.md")
+	journal := operation.New(filepath.Join(root, "journal.json"))
+	preview, err := adapter.InstallSubAgent(definition, adapter.SubAgentRequest{Root: root, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{
+		SourceRoot: root,
+		Journal:    journal,
+		Confirm:    func(p operation.Plan) bool { return len(p.Changes) == 1 },
+	})
+	if err != nil {
+		t.Fatalf("InstallSubAgent() error = %v", err)
+	}
+	if preview.ResourceKind != string(resource.SubAgent) {
+		t.Fatalf("preview resource kind = %q", preview.ResourceKind)
+	}
+	content, err := os.ReadFile(destination)
+	if err != nil || !strings.Contains(string(content), "Review changes.") {
+		t.Fatalf("installed content = %q, %v", content, err)
+	}
+	entry, ok, err := journal.Latest()
+	if err != nil || !ok || entry.ResourceKind != string(resource.SubAgent) {
+		t.Fatalf("journal latest = %#v, %v, %v", entry, ok, err)
+	}
+
+	if _, err := adapter.RemoveSubAgent(definition, adapter.SubAgentRequest{Root: root, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{
+		SourceRoot: root,
+		Journal:    journal,
+		Confirm:    func(operation.Plan) bool { return true },
+	}); err != nil {
+		t.Fatalf("RemoveSubAgent() error = %v", err)
+	}
+	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+		t.Fatalf("removed destination = %v", err)
+	}
+	if err := journal.UndoLatest(func(operation.Plan) bool { return true }); err != nil {
+		t.Fatalf("UndoLatest() error = %v", err)
+	}
+	if _, err := os.Stat(destination); err != nil {
+		t.Fatalf("undo did not restore destination: %v", err)
+	}
+}
+
+func TestInstallSubAgentRefusesUnmanagedConflictWithoutForce(t *testing.T) {
+	root := t.TempDir()
+	destination := filepath.Join(root, ".codex", "agents", "reviewer.toml")
+	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("user-owned"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Reviewer", Role: "Reviews", Instructions: "Review changes."}
+	_, err := adapter.InstallSubAgent(definition, adapter.SubAgentRequest{Root: root, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{
+		SourceRoot: root,
+		Target:     adapter.Codex,
+		Journal:    operation.New(filepath.Join(root, "journal.json")),
+		Conflict:   adapter.ConflictReplace,
+		Confirm:    func(operation.Plan) bool { t.Fatal("confirmation must not be requested without force"); return true },
+	})
+	if !errors.Is(err, adapter.ErrForceRequired) {
+		t.Fatalf("InstallSubAgent() error = %v, want force-required", err)
+	}
+	content, readErr := os.ReadFile(destination)
+	if readErr != nil || string(content) != "user-owned" {
+		t.Fatalf("unmanaged content changed: %q, %v", content, readErr)
+	}
+}
+
+func TestInstallSubAgentPiIsUnsupportedAndDoesNotWrite(t *testing.T) {
+	root := t.TempDir()
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Reviewer", Role: "Reviews", Instructions: "Review changes."}
+	_, err := adapter.InstallSubAgent(definition, adapter.SubAgentRequest{Root: root, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{
+		SourceRoot: root,
+		Journal:    operation.New(filepath.Join(root, "journal.json")),
+		Confirm:    func(operation.Plan) bool { t.Fatal("Pi must not request confirmation"); return true },
+		Target:     adapter.Pi,
+	})
+	if !errors.Is(err, adapter.ErrSubAgentUnsupported) {
+		t.Fatalf("InstallSubAgent() error = %v, want unsupported", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".pi")); !os.IsNotExist(err) {
+		t.Fatalf("Pi installation wrote files: %v", err)
+	}
+}
