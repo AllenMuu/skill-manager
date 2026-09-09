@@ -1,6 +1,7 @@
 package operation_test
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,31 @@ import (
 
 	"github.com/AllenMuu/skill-manager/internal/operation"
 )
+
+func TestLatestNormalizesLegacyJournalEntryWithoutRewritingFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "journal.json")
+	legacy := []map[string]any{{"operation": "activate", "at": "2026-01-01T00:00:00Z", "before": []any{}, "after": []any{}}}
+	contents, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, contents, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	entry, ok, err := operation.New(path).Latest()
+	if err != nil || !ok {
+		t.Fatalf("Latest() = %#v, %v, %v", entry, ok, err)
+	}
+	if entry.Version != "v1" || entry.ResourceKind != "skill" {
+		t.Fatalf("normalized entry = %#v", entry)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != string(contents) {
+		t.Fatalf("legacy journal was rewritten: %q, %v", got, err)
+	}
+}
 
 func TestPlanRendersChangesAndWarnings(t *testing.T) {
 	plan := operation.Plan{Operation: "activate", Changes: []operation.Change{{Path: "/project/.codex/skills/demo", Action: "create link", Detail: "/library/demo"}}, Warnings: []string{"not declared compatible with codex"}}

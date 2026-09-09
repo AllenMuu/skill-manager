@@ -1,4 +1,4 @@
-// skill-manager discovers and manages local directory skills.
+// agent-manager discovers and manages local agent resources.
 package main
 
 import (
@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	if err := cli.NewSkillManagerCommand().Execute(); err != nil {
+	if err := cli.NewAgentManagerCommand().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

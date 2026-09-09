@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/AllenMuu/skill-manager/internal/adapter"
+	"github.com/AllenMuu/skill-manager/internal/resource"
 )
 
 func TestSupportedProjectAndGlobalLocations(t *testing.T) {
@@ -17,6 +18,7 @@ func TestSupportedProjectAndGlobalLocations(t *testing.T) {
 	}{
 		{adapter.ClaudeCode, filepath.Join(project, ".claude", "skills", "demo"), filepath.Join(home, ".claude", "skills", "demo")},
 		{adapter.Codex, filepath.Join(project, ".codex", "skills", "demo"), filepath.Join(home, ".codex", "skills", "demo")},
+		{adapter.Pi, filepath.Join(project, ".pi", "skills", "demo"), filepath.Join(home, ".pi", "agent", "skills", "demo")},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.target), func(t *testing.T) {
@@ -29,6 +31,12 @@ func TestSupportedProjectAndGlobalLocations(t *testing.T) {
 			}
 			if got := a.GlobalSkillPath(home, "demo"); got != tc.global {
 				t.Fatalf("global path = %q, want %q", got, tc.global)
+			}
+			if !a.Supports(resource.Skill) {
+				t.Fatalf("%s does not declare Skill support", tc.target)
+			}
+			if !a.HasCapability(resource.Skill, resource.CapabilityFilesystemWrite) {
+				t.Fatalf("%s does not declare filesystem write capability", tc.target)
 			}
 		})
 	}

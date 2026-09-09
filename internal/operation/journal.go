@@ -26,10 +26,12 @@ type Snapshot struct {
 
 // Entry is a confirmed reversible operation.
 type Entry struct {
-	Operation string     `json:"operation"`
-	At        time.Time  `json:"at"`
-	Before    []Snapshot `json:"before"`
-	After     []Snapshot `json:"after"`
+	Version      string     `json:"version,omitempty"`
+	ResourceKind string     `json:"resourceKind,omitempty"`
+	Operation    string     `json:"operation"`
+	At           time.Time  `json:"at"`
+	Before       []Snapshot `json:"before"`
+	After        []Snapshot `json:"after"`
 }
 
 // Journal persists reversible operation entries at Path.
@@ -75,8 +77,21 @@ func (j *Journal) Record(operation string, before, after []Snapshot) error {
 	if err != nil {
 		return err
 	}
-	entries = append(entries, Entry{Operation: operation, At: time.Now().UTC(), Before: before, After: after})
+	entries = append(entries, Entry{Version: "v1", ResourceKind: "skill", Operation: operation, At: time.Now().UTC(), Before: before, After: after})
 	return j.write(entries)
+}
+
+// Latest returns the latest journal entry after normalizing legacy fields in
+// memory. It never rewrites an existing journal merely by reading it.
+func (j *Journal) Latest() (Entry, bool, error) {
+	entries, err := j.entries()
+	if err != nil {
+		return Entry{}, false, err
+	}
+	if len(entries) == 0 {
+		return Entry{}, false, nil
+	}
+	return entries[len(entries)-1], true, nil
 }
 
 // RecordedLinkTarget reports whether a confirmed operation recorded path as a
@@ -240,6 +255,17 @@ func (j *Journal) entries() ([]Entry, error) {
 	var entries []Entry
 	if err := json.Unmarshal(b, &entries); err != nil {
 		return nil, fmt.Errorf("parse operation journal: %w", err)
+	}
+	for i := range entries {
+		if entries[i].Version == "" {
+			entries[i].Version = "v1"
+		}
+		if entries[i].ResourceKind == "" {
+			entries[i].ResourceKind = "skill"
+		}
+		if entries[i].Version != "v1" {
+			return nil, fmt.Errorf("unsupported operation journal version %q", entries[i].Version)
+		}
 	}
 	return entries, nil
 }
