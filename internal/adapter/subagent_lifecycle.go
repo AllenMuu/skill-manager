@@ -21,6 +21,9 @@ type SubAgentFilesystemOptions struct {
 	Force      bool
 	Journal    *operation.Journal
 	Confirm    func(operation.Plan) bool
+	// BeforeRemove is a test/integration seam invoked after capture and before
+	// atomic staging of the destination.
+	BeforeRemove func() error
 }
 
 // InstallSubAgent renders and installs one canonical SubAgent through its
@@ -151,7 +154,41 @@ func RemoveSubAgent(definition subagent.Definition, request SubAgentRequest, opt
 	if err != nil {
 		return preview, err
 	}
-	if err := os.Remove(destination); err != nil {
+	if options.BeforeRemove != nil {
+		if err := options.BeforeRemove(); err != nil {
+			return preview, err
+		}
+	}
+	stageRoot, err := os.MkdirTemp(filepath.Dir(destination), ".agent-manager-remove-")
+	if err != nil {
+		return preview, err
+	}
+	defer os.RemoveAll(stageRoot)
+	staged := filepath.Join(stageRoot, "destination")
+	if err := os.Rename(destination, staged); err != nil {
+		return preview, err
+	}
+	rollback := func(cause error) error {
+		if _, statErr := os.Lstat(destination); os.IsNotExist(statErr) {
+			if renameErr := os.Rename(staged, destination); renameErr != nil {
+				return errors.Join(cause, renameErr)
+			}
+			return cause
+		}
+		return errors.Join(cause, fmt.Errorf("restore staged SubAgent: destination was recreated"))
+	}
+	stagedInfo, err := os.Lstat(staged)
+	if err != nil {
+		return preview, rollback(err)
+	}
+	if stagedInfo.Mode()&os.ModeSymlink == 0 {
+		return preview, rollback(ErrUnsafePath)
+	}
+	stagedTarget, err := os.Readlink(staged)
+	if err != nil || stagedTarget != source {
+		return preview, rollback(ErrUnsafePath)
+	}
+	if err := os.Remove(staged); err != nil {
 		return preview, err
 	}
 	after, err := options.Journal.Capture([]string{destination})
