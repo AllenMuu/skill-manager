@@ -676,3 +676,38 @@ func TestInstallSubAgentPiIsUnsupportedAndDoesNotWrite(t *testing.T) {
 		t.Fatalf("Pi installation wrote files: %v", err)
 	}
 }
+
+func TestRemoveSubAgentRejectsReplacementAfterConfirmation(t *testing.T) {
+	root := t.TempDir()
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Reviewer", Role: "Reviews", Instructions: "Review changes."}
+	journal := operation.New(filepath.Join(root, "journal.json"))
+	if _, err := adapter.InstallSubAgent(definition, adapter.SubAgentRequest{Root: root, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{
+		SourceRoot: root,
+		Journal:    journal,
+		Confirm:    func(operation.Plan) bool { return true },
+	}); err != nil {
+		t.Fatalf("InstallSubAgent() error = %v", err)
+	}
+	destination := filepath.Join(root, ".claude", "agents", "reviewer.md")
+	confirm := func(operation.Plan) bool {
+		if err := os.Remove(destination); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(destination, []byte("replacement owner"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return true
+	}
+	_, err := adapter.RemoveSubAgent(definition, adapter.SubAgentRequest{Root: root, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{
+		SourceRoot: root,
+		Journal:    journal,
+		Confirm:    confirm,
+	})
+	if !errors.Is(err, adapter.ErrUnsafePath) {
+		t.Fatalf("RemoveSubAgent() error = %v, want unsafe path", err)
+	}
+	content, readErr := os.ReadFile(destination)
+	if readErr != nil || string(content) != "replacement owner" {
+		t.Fatalf("replacement owner changed: %q, %v", content, readErr)
+	}
+}

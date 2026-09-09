@@ -133,6 +133,20 @@ func RemoveSubAgent(definition subagent.Definition, request SubAgentRequest, opt
 	if options.Confirm == nil || !options.Confirm(preview) {
 		return preview, ErrNotConfirmed
 	}
+	// Re-check ownership after confirmation. Confirmation callbacks may involve
+	// user interaction, during which another process can replace the target.
+	// Never capture or remove a path that is no longer our managed link.
+	current, err := os.Lstat(destination)
+	if err != nil {
+		return preview, ErrUnsafePath
+	}
+	if current.Mode()&os.ModeSymlink == 0 {
+		return preview, ErrUnsafePath
+	}
+	linked, err = os.Readlink(destination)
+	if err != nil || linked != source {
+		return preview, ErrUnsafePath
+	}
 	before, err := options.Journal.Capture([]string{destination})
 	if err != nil {
 		return preview, err
