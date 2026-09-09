@@ -45,6 +45,16 @@ func Scan(library, project string, journals ...*operation.Journal) ([]Finding, e
 	}
 	for _, a := range adapter.Supported() {
 		root := filepath.Dir(a.ProjectSkillPath(project, "placeholder"))
+		kinds := a.ResourceKinds()
+		kindNames := make([]string, 0, len(kinds))
+		capabilityNames := make([]string, 0)
+		for _, kind := range kinds {
+			kindNames = append(kindNames, string(kind))
+			for _, capability := range a.Capabilities(kind) {
+				capabilityNames = append(capabilityNames, string(capability))
+			}
+		}
+		findings = append(findings, Finding{root, fmt.Sprintf("adapter %s: supports %s; capabilities: %s", a.Target(), strings.Join(kindNames, ", "), strings.Join(capabilityNames, ", "))})
 		entries, err := os.ReadDir(root)
 		if os.IsNotExist(err) {
 			continue
@@ -59,6 +69,7 @@ func Scan(library, project string, journals ...*operation.Journal) ([]Finding, e
 				return nil, err
 			}
 			if info.Mode()&os.ModeSymlink == 0 {
+				findings = append(findings, Finding{path, "unmanaged resource"})
 				continue
 			}
 			target, err := os.Readlink(path)
@@ -77,6 +88,8 @@ func Scan(library, project string, journals ...*operation.Journal) ([]Finding, e
 				}
 			} else if err != nil {
 				return nil, fmt.Errorf("inspect link target %s: %w", target, err)
+			} else if target != filepath.Join(library, entry.Name()) {
+				findings = append(findings, Finding{path, "unmanaged resource: link target is outside configured library"})
 			}
 			if target == filepath.Join(library, entry.Name()) {
 				managedPaths = append(managedPaths, path)
@@ -88,7 +101,7 @@ func Scan(library, project string, journals ...*operation.Journal) ([]Finding, e
 		return nil, err
 	}
 	for _, entry := range entries {
-		if entry.IsDir() && len(entry.Name()) > 1 && entry.Name()[0] == '.' && entry.Name() != ".git" && entry.Name() != ".codex" && entry.Name() != ".claude" {
+		if entry.IsDir() && len(entry.Name()) > 1 && entry.Name()[0] == '.' && entry.Name() != ".git" && entry.Name() != ".codex" && entry.Name() != ".claude" && entry.Name() != ".pi" {
 			if _, err := os.Stat(filepath.Join(project, entry.Name(), "skills")); err == nil {
 				findings = append(findings, Finding{filepath.Join(project, entry.Name()), "unsupported agent skill location"})
 			}

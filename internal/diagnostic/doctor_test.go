@@ -60,6 +60,47 @@ func TestScanReportsTrackedIgnoredAndUntrackedManagedLinks(t *testing.T) {
 	}
 }
 
+func TestScanReportsAdapterCapabilitiesAndUnmanagedResourcesReadOnly(t *testing.T) {
+	root := t.TempDir()
+	library := filepath.Join(root, "library")
+	project := filepath.Join(root, "project")
+	path := filepath.Join(project, ".pi", "skills", "local")
+	mustMkdir(t, library)
+	mustWrite(t, filepath.Join(path, "SKILL.md"), "---\nname: local\ndescription: local\n---\n")
+	before, err := os.ReadFile(filepath.Join(path, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	findings, err := diagnostic.Scan(library, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := findingsText(findings)
+	for _, want := range []string{"adapter pi", "filesystem-write", "unmanaged resource"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("findings %q do not contain %q", text, want)
+		}
+	}
+	var foundPath bool
+	for _, finding := range findings {
+		if finding.Path == path {
+			foundPath = true
+			break
+		}
+	}
+	if !foundPath {
+		t.Errorf("findings do not include unmanaged path %q: %#v", path, findings)
+	}
+	after, err := os.ReadFile(filepath.Join(path, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("doctor mutated unmanaged resource")
+	}
+}
+
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)

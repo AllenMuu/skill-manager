@@ -260,6 +260,31 @@ func TestEndToEndDoctorReportsOrphanedLink(t *testing.T) {
 	}
 }
 
+func TestEndToEndDoctorReportsCapabilitiesAndUnmanagedResources(t *testing.T) {
+	_, project, configPath := e2eFixture(t)
+	local := filepath.Join(project, ".pi", "skills", "local")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("---\nname: local\ndescription: local\n---\n")
+	if err := os.WriteFile(filepath.Join(local, "SKILL.md"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := runCLI(t, configPath, "doctor", "--project", project)
+	for _, want := range []string{"adapter pi", "filesystem-write", "unmanaged resource", local} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor output=%q; missing %q", out, want)
+		}
+	}
+	after, err := os.ReadFile(filepath.Join(local, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(content) {
+		t.Fatal("doctor mutated unmanaged resource")
+	}
+}
+
 func TestEndToEndReconcileRelinksMovedLibrary(t *testing.T) {
 	root := t.TempDir()
 	oldLibrary := filepath.Join(root, "old-library")
