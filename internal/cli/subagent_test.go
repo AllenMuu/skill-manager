@@ -113,6 +113,31 @@ func TestSubAgentsExplicitMissingLibraryReturnsError(t *testing.T) {
 	}
 }
 
+func TestSubAgentsValidateReportsMissingReferencedSkill(t *testing.T) {
+	root := t.TempDir()
+	library := t.TempDir()
+	writeSubAgent(t, root, "reviewer.yaml", `version: v1
+id: reviewer
+name: Reviewer
+role: Review
+instructions: Review changes.
+skills:
+  - absent-skill
+`)
+
+	command := cli.NewRootCommand()
+	output := &bytes.Buffer{}
+	command.SetOut(output)
+	command.SetErr(output)
+	command.SetArgs([]string{"subagents", "validate", "--root", root, "--library", library, "--json"})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("validate should report missing references without command error: %v", err)
+	}
+	if !strings.Contains(output.String(), `"valid":false`) || !strings.Contains(output.String(), "absent-skill") {
+		t.Fatalf("validation output=%q; want missing referenced Skill diagnostic", output.String())
+	}
+}
+
 func TestSubAgentsConfiguredMissingLibraryReturnsError(t *testing.T) {
 	root := t.TempDir()
 	configPath := filepath.Join(t.TempDir(), "agent-manager.yaml")

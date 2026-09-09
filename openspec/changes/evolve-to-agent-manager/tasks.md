@@ -28,7 +28,7 @@
 - [ ] 4.2 Add SubAgent list, show, and validate command surfaces with JSON output; verify canonical details remain independent of target-native renderings.
 - [ ] 4.3 Implement target-specific SubAgent inspection and render plans through Claude Code, Codex, and Pi adapters; verify every unsupported field or capability is surfaced explicitly.
 - [ ] 4.4 Implement confirmed, conflict-protected SubAgent installation and removal for adapters with a filesystem representation; verify a successful operation is journaled, undoable, and never overwrites unmanaged content without force confirmation.
-- [ ] 4.5 Add fixtures and end-to-end tests for successful installation, unsupported capabilities, missing referenced Skills, conflicts, rollback, and undo; verify `go test ./...` passes.
+- [x] 4.5 Add fixtures and end-to-end tests for successful installation, unsupported capabilities, missing referenced Skills, conflicts, rollback, and undo; verify `go test ./...` passes.
 
 ## 5. Shared Memory provider foundation
 

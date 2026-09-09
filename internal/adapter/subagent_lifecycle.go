@@ -21,6 +21,9 @@ type SubAgentFilesystemOptions struct {
 	Force      bool
 	Journal    *operation.Journal
 	Confirm    func(operation.Plan) bool
+	// BeforePublish is a test/integration seam invoked after confirmation and
+	// before the rendered representation is published.
+	BeforePublish func() error
 	// BeforeRemove is a test/integration seam invoked after capture and before
 	// atomic staging of the destination.
 	BeforeRemove func() error
@@ -78,6 +81,7 @@ func InstallSubAgent(definition subagent.Definition, request SubAgentRequest, op
 		Force:         options.Force,
 		Journal:       options.Journal,
 		Confirm:       options.Confirm,
+		BeforePublish: options.BeforePublish,
 	})
 }
 

@@ -660,6 +660,32 @@ func TestInstallSubAgentRefusesUnmanagedConflictWithoutForce(t *testing.T) {
 	}
 }
 
+func TestInstallSubAgentRollsBackRenderedSourceWhenPublicationFails(t *testing.T) {
+	root := t.TempDir()
+	journal := operation.New(filepath.Join(root, "journal.json"))
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Reviewer", Role: "Reviews", Instructions: "Review changes."}
+	failure := errors.New("injected publication failure")
+
+	_, err := adapter.InstallSubAgent(definition, adapter.SubAgentRequest{Root: root, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{
+		SourceRoot: root,
+		Journal:    journal,
+		Confirm:    func(operation.Plan) bool { return true },
+		BeforePublish: func() error {
+			return failure
+		},
+	})
+	if !errors.Is(err, failure) {
+		t.Fatalf("InstallSubAgent() error = %v, want injected publication failure", err)
+	}
+	destination := filepath.Join(root, ".claude", "agents", "reviewer.md")
+	if _, statErr := os.Lstat(destination); !os.IsNotExist(statErr) {
+		t.Fatalf("failed installation left destination: %v", statErr)
+	}
+	if _, found, journalErr := journal.Latest(); journalErr != nil || found {
+		t.Fatalf("failed installation journal = found=%v, err=%v; want no entry", found, journalErr)
+	}
+}
+
 func TestInstallSubAgentPiIsUnsupportedAndDoesNotWrite(t *testing.T) {
 	root := t.TempDir()
 	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Reviewer", Role: "Reviews", Instructions: "Review changes."}
