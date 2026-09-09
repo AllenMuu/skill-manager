@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -146,6 +147,19 @@ func discoverSubAgents(rootOptions *rootOptions, options *subAgentOptions) (suba
 			return subagent.Registry{}, nil, nil, err
 		}
 		library = configured.LibraryPath
+	}
+	if _, err := os.Stat(library); err != nil {
+		if os.IsNotExist(err) {
+			// The default library is optional until a definition references a
+			// Skill. Registry validation will report that reference explicitly.
+			registry, registryErr := registryForOptions(options, nil)
+			if registryErr != nil {
+				return subagent.Registry{}, nil, nil, registryErr
+			}
+			definitions, diagnostics, discoverErr := registry.Discover()
+			return registry, definitions, diagnostics, discoverErr
+		}
+		return subagent.Registry{}, nil, nil, fmt.Errorf("inspect skill library: %w", err)
 	}
 	skills, _, err := catalog.Discover(library)
 	if err != nil {
