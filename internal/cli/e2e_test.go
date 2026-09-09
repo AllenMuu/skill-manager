@@ -133,6 +133,43 @@ func TestAgentsInventoryReportsLocalAdapterAvailability(t *testing.T) {
 	}
 }
 
+func TestAgentsInventoryDistinguishesUnsupportedProjectAgent(t *testing.T) {
+	project := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(project, ".foo", "skills"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	root := cli.NewAgentManagerCommand()
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs([]string{"agents", "--project", project, "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("agents inventory: %v", err)
+	}
+
+	var items []struct {
+		ID     string   `json:"id"`
+		Status string   `json:"status"`
+		Kinds  []string `json:"resourceKinds"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &items); err != nil {
+		t.Fatalf("decode inventory: %v; output=%s", err, out.String())
+	}
+	var found bool
+	for _, item := range items {
+		if item.ID == "foo" {
+			found = true
+			if item.Status != "unsupported" || len(item.Kinds) != 0 {
+				t.Fatalf("unsupported item = %#v, want unsupported with no resource kinds", item)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("inventory=%s; missing unsupported foo agent", out.String())
+	}
+}
+
 func TestEndToEndInitInstallsOperatorSkill(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
