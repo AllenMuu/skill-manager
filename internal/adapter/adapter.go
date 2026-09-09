@@ -54,6 +54,20 @@ type AgentAdapter interface {
 	Place(resource.PlacementPlan) error
 }
 
+// CompareCapabilities compares a resource request with a target adapter's
+// declaration. Callers should inspect IsSupported before constructing or
+// confirming a mutation plan.
+func CompareCapabilities(request resource.CapabilityRequest, target Adapter) resource.CapabilityResult {
+	if target == nil {
+		return resource.CapabilityResult{Missing: append([]resource.Capability(nil), request.Required...)}
+	}
+	supported := append([]resource.Capability(nil), target.Capabilities(request.Kind)...)
+	return resource.CapabilityResult{
+		Supported: supported,
+		Missing:   resource.MissingCapabilities(request.Required, supported),
+	}
+}
+
 type directoryAdapter struct {
 	target    Target
 	dir       string
@@ -94,11 +108,15 @@ func (a directoryAdapter) Plan(kind resource.Kind, managed resource.ManagedResou
 		return resource.PlacementPlan{}, err
 	}
 	capabilities := a.Capabilities(kind)
-	return resource.PlacementPlan{
+	plan := resource.PlacementPlan{
 		Resource:     managed,
-		Capabilities: capabilities,
+		Capabilities: append([]resource.Capability(nil), capabilities...),
 		Missing:      resource.MissingCapabilities(managed.RequiredCapabilities, capabilities),
-	}, nil
+	}
+	if len(plan.Missing) > 0 {
+		return plan, fmt.Errorf("%w: missing capabilities %v", resource.ErrUnsupportedCapabilities, plan.Missing)
+	}
+	return plan, nil
 }
 
 // Place validates an adapter-neutral plan. Filesystem mutations continue to

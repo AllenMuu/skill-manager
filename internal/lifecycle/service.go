@@ -138,7 +138,9 @@ func (s *Service) Add(project string, skill catalog.Skill, targets []adapter.Tar
 			return plan, fmt.Errorf("unsupported target %q", target)
 		}
 		if err := validateSkillTarget(skill, target); err != nil {
-			return plan, err
+			// Capability failures are rejected before an operation plan is
+			// published or confirmation is requested.
+			return operation.Plan{}, err
 		}
 		path := a.ProjectSkillPath(project, skill.Identifier)
 		if contains(skill.Compatibility, string(target)) == false {
@@ -251,7 +253,9 @@ func (s *Service) AddMany(project string, skills []catalog.Skill, targets []adap
 				return plan, fmt.Errorf("unsupported target %q", target)
 			}
 			if err := validateSkillTarget(skill, target); err != nil {
-				return plan, err
+				// Do not return a partially populated executable plan when a
+				// required target capability is absent.
+				return operation.Plan{}, err
 			}
 			path := a.ProjectSkillPath(project, skill.Identifier)
 			if seen[path] {

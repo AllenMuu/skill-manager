@@ -79,6 +79,24 @@ type PlanRequest struct {
 	Capabilities []Capability
 }
 
+// CapabilityRequest describes the capabilities a resource needs from a
+// target adapter. It is deliberately independent of runtime paths so callers
+// can reject unsupported targets before building a filesystem operation plan.
+type CapabilityRequest struct {
+	Kind     Kind
+	Required []Capability
+}
+
+// CapabilityResult reports the complete capability comparison for a target.
+// Missing is stable and preserves the order in Required.
+type CapabilityResult struct {
+	Supported []Capability
+	Missing   []Capability
+}
+
+// Supported reports whether every required capability is available.
+func (r CapabilityResult) IsSupported() bool { return len(r.Missing) == 0 }
+
 // PlacementPlan is an agent-neutral operation description. An adapter may
 // translate it into a runtime-specific destination when applying the plan.
 type PlacementPlan struct {

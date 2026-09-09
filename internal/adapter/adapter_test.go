@@ -89,6 +89,46 @@ func TestAdapterPlacementRejectsUnimplementedMutation(t *testing.T) {
 	}
 }
 
+func TestCompareCapabilitiesReportsMissingWithoutPlanning(t *testing.T) {
+	a, ok := adapter.For(adapter.Codex)
+	if !ok {
+		t.Fatal("Codex adapter is unavailable")
+	}
+	result := adapter.CompareCapabilities(resource.CapabilityRequest{
+		Kind:     resource.Skill,
+		Required: []resource.Capability{resource.CapabilityFilesystemRead, resource.CapabilityMemorySearch},
+	}, a)
+	if result.IsSupported() {
+		t.Fatal("capability comparison reported unsupported capability as supported")
+	}
+	if len(result.Missing) != 1 || result.Missing[0] != resource.CapabilityMemorySearch {
+		t.Fatalf("missing capabilities = %v, want [%s]", result.Missing, resource.CapabilityMemorySearch)
+	}
+	if len(result.Supported) != 2 {
+		t.Fatalf("supported capabilities = %v, want target declaration", result.Supported)
+	}
+}
+
+func TestPlanRejectsMissingCapabilitiesBeforePlacement(t *testing.T) {
+	a, ok := adapter.ForAgent(adapter.Codex)
+	if !ok {
+		t.Fatal("Codex adapter is unavailable")
+	}
+	item := resource.ManagedResource{
+		Version:              "v1",
+		ID:                   "demo",
+		Kind:                 resource.Skill,
+		RequiredCapabilities: []resource.Capability{resource.CapabilityMemorySearch},
+	}
+	plan, err := a.Plan(resource.Skill, item)
+	if !errors.Is(err, resource.ErrUnsupportedCapabilities) {
+		t.Fatalf("Plan() error = %v, want unsupported capabilities", err)
+	}
+	if len(plan.Missing) != 1 || len(plan.Capabilities) == 0 {
+		t.Fatalf("Plan() = %#v, want explicit missing capability result", plan)
+	}
+}
+
 func TestLegacyAdapterAccessorsRemainAssignable(t *testing.T) {
 	var legacy adapter.Adapter
 	legacy, ok := adapter.For(adapter.Codex)
