@@ -141,6 +141,7 @@ func newSubAgentValidateCommand(rootOptions *rootOptions, options *subAgentOptio
 func discoverSubAgents(rootOptions *rootOptions, options *subAgentOptions) (subagent.Registry, []subagent.Definition, []subagent.Diagnostic, error) {
 	var checker subagent.SkillReferenceChecker
 	library := options.library
+	implicitDefaultLibrary := library == "" && rootOptions.configPath == ""
 	if library == "" {
 		configured, err := config.Load(rootOptions.configPath)
 		if err != nil {
@@ -150,6 +151,9 @@ func discoverSubAgents(rootOptions *rootOptions, options *subAgentOptions) (suba
 	}
 	if _, err := os.Stat(library); err != nil {
 		if os.IsNotExist(err) {
+			if !implicitDefaultLibrary {
+				return subagent.Registry{}, nil, nil, fmt.Errorf("read skill library: %w", err)
+			}
 			// The default library is optional until a definition references a
 			// Skill. Registry validation will report that reference explicitly.
 			registry, registryErr := registryForOptions(options, nil)

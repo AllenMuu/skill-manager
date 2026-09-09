@@ -101,6 +101,33 @@ instructions: Review changes.
 	}
 }
 
+func TestSubAgentsExplicitMissingLibraryReturnsError(t *testing.T) {
+	root := t.TempDir()
+	missingLibrary := filepath.Join(t.TempDir(), "missing-skills")
+	command := cli.NewRootCommand()
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"subagents", "list", "--root", root, "--library", missingLibrary})
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "skill library") {
+		t.Fatalf("error = %v; explicit missing library should fail", err)
+	}
+}
+
+func TestSubAgentsConfiguredMissingLibraryReturnsError(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "agent-manager.yaml")
+	if err := os.WriteFile(configPath, []byte("library: missing-skills\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	command := cli.NewRootCommand()
+	command.SetOut(&bytes.Buffer{})
+	command.SetErr(&bytes.Buffer{})
+	command.SetArgs([]string{"--config", configPath, "subagents", "list", "--root", root})
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "skill library") {
+		t.Fatalf("error = %v; configured missing library should fail", err)
+	}
+}
+
 func TestSubAgentsShowHumanIncludesCanonicalDetails(t *testing.T) {
 	root := t.TempDir()
 	writeSubAgent(t, root, "reviewer.yaml", `version: v1
