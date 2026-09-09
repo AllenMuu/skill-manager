@@ -163,6 +163,36 @@ func TestPlaceFilesystemRejectsChangedConflictWithoutOverwriting(t *testing.T) {
 	}
 }
 
+func TestPlaceFilesystemRejectsChangedDirectoryConflictWithoutOverwriting(t *testing.T) {
+	source := t.TempDir()
+	destination := filepath.Join(t.TempDir(), "demo")
+	if err := os.MkdirAll(destination, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(destination, "original.txt"), []byte("original"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	journal := operation.New(filepath.Join(t.TempDir(), "journal.json"))
+	plan := resource.PlacementPlan{Resource: resource.ManagedResource{
+		Version: "v1", ID: "demo", Kind: resource.Skill,
+		Provenance: resource.Provenance{Source: source},
+	}}
+	_, err := adapter.PlaceFilesystem(plan, adapter.FilesystemPlacementOptions{
+		Destination: destination, Conflict: adapter.ConflictReplace, Force: true, Journal: journal,
+		BeforePublish: func() error {
+			return os.WriteFile(filepath.Join(destination, "late.txt"), []byte("late unmanaged"), 0o644)
+		},
+		Confirm: func(operation.Plan) bool { return true },
+	})
+	if !errors.Is(err, adapter.ErrUnsafePath) {
+		t.Fatalf("PlaceFilesystem() error = %v, want unsafe path", err)
+	}
+	got, readErr := os.ReadFile(filepath.Join(destination, "late.txt"))
+	if readErr != nil || string(got) != "late unmanaged" {
+		t.Fatalf("changed unmanaged directory was overwritten: %q, %v", got, readErr)
+	}
+}
+
 func TestCompareCapabilitiesReportsMissingWithoutPlanning(t *testing.T) {
 	a, ok := adapter.For(adapter.Codex)
 	if !ok {

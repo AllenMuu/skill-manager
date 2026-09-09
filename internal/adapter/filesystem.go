@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -141,7 +142,66 @@ func matchesSnapshot(snapshot operation.Snapshot) bool {
 		backupBytes, backupErr := os.ReadFile(snapshot.Backup)
 		return currentErr == nil && backupErr == nil && string(currentBytes) == string(backupBytes)
 	}
-	return current.IsDir() == backup.IsDir()
+	if current.IsDir() {
+		return treesMatch(snapshot.Path, snapshot.Backup)
+	}
+	return true
+}
+
+// treesMatch compares directory contents without following symlinks. Journal
+// backups are therefore treated as opaque filesystem snapshots, including
+// executable files and nested unmanaged content.
+func treesMatch(current, backup string) bool {
+	currentEntries, err := os.ReadDir(current)
+	if err != nil {
+		return false
+	}
+	backupEntries, err := os.ReadDir(backup)
+	if err != nil || len(currentEntries) != len(backupEntries) {
+		return false
+	}
+	for _, entry := range currentEntries {
+		other, err := os.ReadDir(backup)
+		if err != nil {
+			return false
+		}
+		found := false
+		for _, candidate := range other {
+			if candidate.Name() == entry.Name() {
+				found = true
+				break
+			}
+		}
+		if !found || !pathsMatch(filepath.Join(current, entry.Name()), filepath.Join(backup, entry.Name())) {
+			return false
+		}
+	}
+	return true
+}
+
+func pathsMatch(current, backup string) bool {
+	currentInfo, err := os.Lstat(current)
+	if err != nil {
+		return false
+	}
+	backupInfo, err := os.Lstat(backup)
+	if err != nil || currentInfo.Mode() != backupInfo.Mode() {
+		return false
+	}
+	if currentInfo.Mode()&os.ModeSymlink != 0 {
+		currentTarget, currentErr := os.Readlink(current)
+		backupTarget, backupErr := os.Readlink(backup)
+		return currentErr == nil && backupErr == nil && currentTarget == backupTarget
+	}
+	if currentInfo.IsDir() {
+		return treesMatch(current, backup)
+	}
+	if currentInfo.Mode().IsRegular() {
+		currentBytes, currentErr := os.ReadFile(current)
+		backupBytes, backupErr := os.ReadFile(backup)
+		return currentErr == nil && backupErr == nil && bytes.Equal(currentBytes, backupBytes)
+	}
+	return true
 }
 
 func safePlacementPaths(resource resource.ManagedResource, destination string) (string, string, error) {
