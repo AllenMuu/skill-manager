@@ -8,7 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AllenMuu/skill-manager/internal/adapter"
 	"github.com/AllenMuu/skill-manager/internal/cli"
+	"github.com/AllenMuu/skill-manager/internal/operation"
+	"github.com/spf13/cobra"
 )
 
 // e2eFixture builds a configured library with one eligible skill and an
@@ -326,5 +329,130 @@ func TestEndToEndUndoEmptyJournalFails(t *testing.T) {
 	_, project, configPath := e2eFixture(t)
 	if err := runCLIErr(t, configPath, "undo", "--project", project, "--yes"); err == nil {
 		t.Fatal("undo on empty journal succeeded")
+	}
+}
+
+func TestPublicCLIActivationParityAcrossEntrypointsAndAdapters(t *testing.T) {
+	entrypoints := []struct {
+		name string
+		new  func() *cobra.Command
+	}{
+		{name: "agent-manager", new: cli.NewAgentManagerCommand},
+		{name: "skill-manager", new: cli.NewSkillManagerCommand},
+	}
+	targets := []adapter.Target{adapter.ClaudeCode, adapter.Codex, adapter.Pi}
+	for _, entrypoint := range entrypoints {
+		for _, target := range targets {
+			t.Run(entrypoint.name+"/"+string(target), func(t *testing.T) {
+				library, project, configPath := e2eFixture(t)
+				root := entrypoint.new()
+				out := &bytes.Buffer{}
+				root.SetOut(out)
+				root.SetErr(out)
+				root.SetArgs([]string{"--config", configPath, "add", "demo", "--project", project, "--target", string(target), "--yes"})
+				if err := root.Execute(); err != nil {
+					t.Fatal(err)
+				}
+
+				a, ok := adapter.For(target)
+				if !ok {
+					t.Fatalf("missing adapter for %s", target)
+				}
+				link := a.ProjectSkillPath(project, "demo")
+				got, err := os.Readlink(link)
+				if err != nil || got != filepath.Join(library, "demo") || !filepath.IsAbs(got) {
+					t.Fatalf("%s link = %q, %v", target, got, err)
+				}
+
+				journalPath := filepath.Join(project, ".skill-manager", "journal.json")
+				entry, found, err := operation.New(journalPath).Latest()
+				if err != nil || !found {
+					t.Fatalf("latest journal entry = %#v, found=%v, err=%v", entry, found, err)
+				}
+				if entry.Version != "v1" || entry.ResourceKind != "skill" || entry.Operation != "activate" {
+					t.Fatalf("journal entry = %#v", entry)
+				}
+				if len(entry.Before) != 1 || entry.Before[0].Exists || len(entry.After) != 1 || !entry.After[0].Exists || entry.After[0].Path != link {
+					t.Fatalf("journal snapshots = %#v", entry)
+				}
+
+				root = entrypoint.new()
+				root.SetOut(&bytes.Buffer{})
+				root.SetErr(&bytes.Buffer{})
+				root.SetArgs([]string{"--config", configPath, "undo", "--project", project, "--yes"})
+				if err := root.Execute(); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := os.Lstat(link); !os.IsNotExist(err) {
+					t.Fatalf("undo left %s: %v", link, err)
+				}
+				if _, err := os.Stat(got); err != nil {
+					t.Fatalf("undo removed library skill: %v", err)
+				}
+				if _, found, err := operation.New(journalPath).Latest(); err != nil || found {
+					t.Fatalf("journal after undo = found=%v, err=%v", found, err)
+				}
+			})
+		}
+	}
+}
+
+func TestPublicCLIRecoversLegacySkillJournalAcrossEntrypointsAndAdapters(t *testing.T) {
+	entrypoints := []struct {
+		name string
+		new  func() *cobra.Command
+	}{
+		{name: "agent-manager", new: cli.NewAgentManagerCommand},
+		{name: "skill-manager", new: cli.NewSkillManagerCommand},
+	}
+	for _, entrypoint := range entrypoints {
+		for _, target := range []adapter.Target{adapter.ClaudeCode, adapter.Codex, adapter.Pi} {
+			t.Run(entrypoint.name+"/"+string(target), func(t *testing.T) {
+				library, project, configPath := e2eFixture(t)
+				root := entrypoint.new()
+				root.SetOut(&bytes.Buffer{})
+				root.SetErr(&bytes.Buffer{})
+				root.SetArgs([]string{"--config", configPath, "add", "demo", "--project", project, "--target", string(target), "--yes"})
+				if err := root.Execute(); err != nil {
+					t.Fatal(err)
+				}
+				journalPath := filepath.Join(project, ".skill-manager", "journal.json")
+				contents, err := os.ReadFile(journalPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var records []map[string]any
+				if err := json.Unmarshal(contents, &records); err != nil {
+					t.Fatal(err)
+				}
+				delete(records[0], "version")
+				delete(records[0], "resourceKind")
+				legacy, err := json.Marshal(records)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(journalPath, legacy, 0o644); err != nil {
+					t.Fatal(err)
+				}
+
+				root = entrypoint.new()
+				root.SetOut(&bytes.Buffer{})
+				root.SetErr(&bytes.Buffer{})
+				root.SetArgs([]string{"--config", configPath, "undo", "--project", project, "--yes"})
+				if err := root.Execute(); err != nil {
+					t.Fatalf("legacy undo: %v", err)
+				}
+				a, _ := adapter.For(target)
+				if _, err := os.Lstat(a.ProjectSkillPath(project, "demo")); !os.IsNotExist(err) {
+					t.Fatalf("legacy undo left activation: %v", err)
+				}
+				if _, err := os.Stat(filepath.Join(library, "demo")); err != nil {
+					t.Fatalf("legacy undo removed library skill: %v", err)
+				}
+				if _, found, err := operation.New(journalPath).Latest(); err != nil || found {
+					t.Fatalf("legacy journal after undo = found=%v, err=%v", found, err)
+				}
+			})
+		}
 	}
 }
