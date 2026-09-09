@@ -49,6 +49,34 @@ requiredCapabilities:
 	}
 }
 
+func TestSubAgentsUseDefaultConfiguredSkillLibraryWhenLibraryIsOmitted(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	library := filepath.Join(home, ".agents", "skills")
+	writeSkill(t, library, "go-helper", "Go helper", "helper", "go\n")
+	root := t.TempDir()
+	writeSubAgent(t, root, "reviewer.yaml", `version: v1
+id: reviewer
+name: Reviewer
+role: Review
+instructions: Review changes.
+skills:
+  - go-helper
+`)
+
+	command := cli.NewRootCommand()
+	output := &bytes.Buffer{}
+	command.SetOut(output)
+	command.SetErr(output)
+	command.SetArgs([]string{"subagents", "list", "--root", root, "--json"})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if !strings.Contains(output.String(), `"id":"reviewer"`) {
+		t.Fatalf("output=%q; want definition accepted through default Skill library", output.String())
+	}
+}
+
 func TestSubAgentsShowHumanIncludesCanonicalDetails(t *testing.T) {
 	root := t.TempDir()
 	writeSubAgent(t, root, "reviewer.yaml", `version: v1

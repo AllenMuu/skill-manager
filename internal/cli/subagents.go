@@ -139,27 +139,25 @@ func newSubAgentValidateCommand(rootOptions *rootOptions, options *subAgentOptio
 
 func discoverSubAgents(rootOptions *rootOptions, options *subAgentOptions) (subagent.Registry, []subagent.Definition, []subagent.Diagnostic, error) {
 	var checker subagent.SkillReferenceChecker
-	if options.library != "" || rootOptions.configPath != "" {
-		library := options.library
-		if library == "" {
-			configured, err := config.Load(rootOptions.configPath)
-			if err != nil {
-				return subagent.Registry{}, nil, nil, err
-			}
-			library = configured.LibraryPath
-		}
-		skills, _, err := catalog.Discover(library)
+	library := options.library
+	if library == "" {
+		configured, err := config.Load(rootOptions.configPath)
 		if err != nil {
 			return subagent.Registry{}, nil, nil, err
 		}
-		checker = func(identifier string) bool {
-			for _, skill := range skills {
-				if skill.Identifier == identifier {
-					return true
-				}
+		library = configured.LibraryPath
+	}
+	skills, _, err := catalog.Discover(library)
+	if err != nil {
+		return subagent.Registry{}, nil, nil, err
+	}
+	checker = func(identifier string) bool {
+		for _, skill := range skills {
+			if skill.Identifier == identifier {
+				return true
 			}
-			return false
 		}
+		return false
 	}
 	registry, err := registryForOptions(options, checker)
 	if err != nil {
