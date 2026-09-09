@@ -61,10 +61,12 @@ func CompareCapabilities(request resource.CapabilityRequest, target Adapter) res
 	if target == nil {
 		return resource.CapabilityResult{Missing: append([]resource.Capability(nil), request.Required...)}
 	}
+	kindSupported := target.Supports(request.Kind)
 	supported := append([]resource.Capability(nil), target.Capabilities(request.Kind)...)
 	return resource.CapabilityResult{
-		Supported: supported,
-		Missing:   resource.MissingCapabilities(request.Required, supported),
+		KindSupported: kindSupported,
+		Supported:     supported,
+		Missing:       resource.MissingCapabilities(request.Required, supported),
 	}
 }
 

@@ -129,6 +129,48 @@ func TestPlanRejectsMissingCapabilitiesBeforePlacement(t *testing.T) {
 	}
 }
 
+func TestPiRejectsUnsupportedResourceKindsBeforePlacement(t *testing.T) {
+	a, ok := adapter.ForAgent(adapter.Pi)
+	if !ok {
+		t.Fatal("Pi adapter is unavailable")
+	}
+	for _, kind := range []resource.Kind{resource.SubAgent, resource.Memory} {
+		t.Run(string(kind), func(t *testing.T) {
+			item := resource.ManagedResource{Version: "v1", ID: "demo", Kind: kind}
+			result := adapter.CompareCapabilities(resource.CapabilityRequest{Kind: kind}, a)
+			if result.KindSupported {
+				t.Fatal("unsupported kind was reported as supported")
+			}
+			if result.IsSupported() {
+				t.Fatal("unsupported kind passed capability comparison")
+			}
+			if _, err := a.Inspect(kind, item); err == nil {
+				t.Fatal("Inspect accepted unsupported kind")
+			}
+			if _, err := a.Plan(kind, item); err == nil {
+				t.Fatal("Plan accepted unsupported kind")
+			}
+		})
+	}
+}
+
+func TestPiUnsupportedResourcePlacementDoesNotWrite(t *testing.T) {
+	a, ok := adapter.ForAgent(adapter.Pi)
+	if !ok {
+		t.Fatal("Pi adapter is unavailable")
+	}
+	for _, kind := range []resource.Kind{resource.SubAgent, resource.Memory} {
+		t.Run(string(kind), func(t *testing.T) {
+			plan := resource.PlacementPlan{Resource: resource.ManagedResource{
+				Version: "v1", ID: "demo", Kind: kind,
+			}}
+			if err := a.Place(plan); err == nil {
+				t.Fatal("Place accepted unsupported kind")
+			}
+		})
+	}
+}
+
 func TestLegacyAdapterAccessorsRemainAssignable(t *testing.T) {
 	var legacy adapter.Adapter
 	legacy, ok := adapter.For(adapter.Codex)
