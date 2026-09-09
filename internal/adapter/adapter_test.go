@@ -223,6 +223,30 @@ func TestPlaceFilesystemRejectsConflictCreatedAfterAtomicStaging(t *testing.T) {
 	}
 }
 
+func TestPlaceFilesystemPreservesOwnerCreatedAtFinalPublish(t *testing.T) {
+	source := t.TempDir()
+	destination := filepath.Join(t.TempDir(), "demo")
+	journal := operation.New(filepath.Join(t.TempDir(), "journal.json"))
+	plan := resource.PlacementPlan{Resource: resource.ManagedResource{
+		Version: "v1", ID: "demo", Kind: resource.Skill,
+		Provenance: resource.Provenance{Source: source},
+	}}
+	_, err := adapter.PlaceFilesystem(plan, adapter.FilesystemPlacementOptions{
+		Destination: destination, Journal: journal,
+		BeforeFinalPublish: func() error {
+			return os.WriteFile(destination, []byte("late final owner"), 0o644)
+		},
+		Confirm: func(operation.Plan) bool { return true },
+	})
+	if !errors.Is(err, adapter.ErrUnsafePath) {
+		t.Fatalf("PlaceFilesystem() error = %v, want unsafe path", err)
+	}
+	got, readErr := os.ReadFile(destination)
+	if readErr != nil || string(got) != "late final owner" {
+		t.Fatalf("final late owner overwritten: %q, %v", got, readErr)
+	}
+}
+
 func TestCompareCapabilitiesReportsMissingWithoutPlanning(t *testing.T) {
 	a, ok := adapter.For(adapter.Codex)
 	if !ok {

@@ -42,6 +42,8 @@ type FilesystemPlacementOptions struct {
 	// BeforeRemove is invoked after an existing destination is atomically
 	// staged and immediately before its staged copy would be discarded.
 	BeforeRemove func() error
+	// BeforeFinalPublish is invoked after the final destination absence check.
+	BeforeFinalPublish func() error
 }
 
 // PlaceFilesystem publishes a source directory as an absolute symlink at the
@@ -108,7 +110,7 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 	if conflict && !matchesSnapshot(before[0]) {
 		return preview, ErrUnsafePath
 	}
-	if err := publishLink(destination, source, conflict, before[0], options.BeforeRemove); err != nil {
+	if err := publishLink(destination, source, conflict, before[0], options.BeforeRemove, options.BeforeFinalPublish); err != nil {
 		// A rejected late conflict has not mutated the destination; restoring an
 		// empty snapshot here would wrongly delete the unmanaged file that won
 		// the race.
@@ -254,7 +256,7 @@ func destinationConflict(destination, source string) (bool, error) {
 	return true, nil
 }
 
-func publishLink(destination, source string, replace bool, snapshot operation.Snapshot, beforeRemove func() error) error {
+func publishLink(destination, source string, replace bool, snapshot operation.Snapshot, beforeRemove, beforeFinalPublish func() error) error {
 	if err := os.MkdirAll(filepath.Dir(destination), 0o755); err != nil {
 		return err
 	}
@@ -293,7 +295,18 @@ func publishLink(destination, source string, replace bool, snapshot operation.Sn
 	} else if !os.IsNotExist(err) {
 		return err
 	}
+	if beforeFinalPublish != nil {
+		if err := beforeFinalPublish(); err != nil {
+			return err
+		}
+	}
 	// Symlink itself is an atomic create and refuses an existing destination,
 	// unlike Rename which would overwrite a late unmanaged path.
-	return os.Symlink(source, destination)
+	if err := os.Symlink(source, destination); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return errors.Join(ErrUnsafePath, errLateConflict)
+		}
+		return err
+	}
+	return nil
 }
