@@ -29,6 +29,26 @@ type Adapter interface {
 	HasCapability(resource.Kind, resource.Capability) bool
 }
 
+// Detection reports whether an agent integration is available to receive
+// resources. It contains no filesystem location; placement remains an
+// adapter concern.
+type Detection struct {
+	Target    Target
+	Available bool
+}
+
+// AgentAdapter is the complete runtime boundary for agent-neutral resources.
+// Resource contracts carry identity and metadata, while this interface owns
+// target-specific inspection, planning, capability translation, and placement.
+type AgentAdapter interface {
+	Adapter
+	Detect() Detection
+	Inspect(resource.Kind, resource.ManagedResource) (resource.Inspection, error)
+	Validate(resource.Kind, resource.ManagedResource) error
+	Plan(resource.Kind, resource.ManagedResource) (resource.PlacementPlan, error)
+	Place(resource.PlacementPlan) error
+}
+
 type directoryAdapter struct {
 	target    Target
 	dir       string
@@ -36,6 +56,51 @@ type directoryAdapter struct {
 }
 
 func (a directoryAdapter) Target() Target { return a.target }
+
+func (a directoryAdapter) Detect() Detection {
+	return Detection{Target: a.target, Available: true}
+}
+
+func (a directoryAdapter) Inspect(kind resource.Kind, managed resource.ManagedResource) (resource.Inspection, error) {
+	if !a.Supports(kind) {
+		return resource.Inspection{}, fmt.Errorf("%s does not support resource kind %q", a.target, kind)
+	}
+	if managed.Kind != kind {
+		return resource.Inspection{}, fmt.Errorf("resource kind %q does not match inspection kind %q", managed.Kind, kind)
+	}
+	if err := managed.Validate(); err != nil {
+		return resource.Inspection{}, err
+	}
+	return resource.Inspection{Resource: managed}, nil
+}
+
+func (a directoryAdapter) Validate(kind resource.Kind, managed resource.ManagedResource) error {
+	if !a.Supports(kind) {
+		return fmt.Errorf("%s does not support resource kind %q", a.target, kind)
+	}
+	if managed.Kind != kind {
+		return fmt.Errorf("resource kind %q does not match validation kind %q", managed.Kind, kind)
+	}
+	return managed.Validate()
+}
+
+func (a directoryAdapter) Plan(kind resource.Kind, managed resource.ManagedResource) (resource.PlacementPlan, error) {
+	if err := a.Validate(kind, managed); err != nil {
+		return resource.PlacementPlan{}, err
+	}
+	capabilities := a.Capabilities(kind)
+	return resource.PlacementPlan{
+		Resource:     managed,
+		Capabilities: capabilities,
+		Missing:      resource.MissingCapabilities(managed.RequiredCapabilities, capabilities),
+	}, nil
+}
+
+// Place validates an adapter-neutral plan. Filesystem mutations continue to
+// use the existing explicit path methods and guarded lifecycle services.
+func (a directoryAdapter) Place(plan resource.PlacementPlan) error {
+	return a.Validate(plan.Resource.Kind, plan.Resource)
+}
 
 func (a directoryAdapter) ProjectSkillPath(project, identifier string) string {
 	return filepath.Join(project, a.dir, "skills", identifier)
@@ -69,14 +134,14 @@ func (a directoryAdapter) HasCapability(kind resource.Kind, capability resource.
 	return false
 }
 
-var supported = map[Target]Adapter{
+var supported = map[Target]AgentAdapter{
 	ClaudeCode: directoryAdapter{target: ClaudeCode, dir: ".claude"},
 	Codex:      directoryAdapter{target: Codex, dir: ".codex"},
 	Pi:         directoryAdapter{target: Pi, dir: ".pi", globalDir: filepath.Join(".pi", "agent")},
 }
 
 // For returns the adapter for target when that target is supported.
-func For(target Target) (Adapter, bool) {
+func For(target Target) (AgentAdapter, bool) {
 	a, ok := supported[target]
 	return a, ok
 }
@@ -90,6 +155,6 @@ func ValidateIdentifier(identifier string) error {
 }
 
 // Supported returns all supported adapters in stable target order.
-func Supported() []Adapter {
-	return []Adapter{supported[ClaudeCode], supported[Codex], supported[Pi]}
+func Supported() []AgentAdapter {
+	return []AgentAdapter{supported[ClaudeCode], supported[Codex], supported[Pi]}
 }

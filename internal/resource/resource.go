@@ -39,15 +39,53 @@ type Compatibility struct {
 
 // ManagedResource is the stable envelope shared by all resource handlers.
 type ManagedResource struct {
-	Version              string        `json:"version" yaml:"version"`
-	ID                   string        `json:"id" yaml:"id"`
-	Kind                 Kind          `json:"kind" yaml:"kind"`
-	Provenance           Provenance    `json:"provenance" yaml:"provenance"`
-	Compatibility        Compatibility `json:"compatibility,omitempty" yaml:"compatibility,omitempty"`
-	RequiredCapabilities []Capability  `json:"requiredCapabilities,omitempty" yaml:"requiredCapabilities,omitempty"`
+	Version              string            `json:"version" yaml:"version"`
+	ID                   string            `json:"id" yaml:"id"`
+	Kind                 Kind              `json:"kind" yaml:"kind"`
+	Provenance           Provenance        `json:"provenance" yaml:"provenance"`
+	Compatibility        Compatibility     `json:"compatibility,omitempty" yaml:"compatibility,omitempty"`
+	RequiredCapabilities []Capability      `json:"requiredCapabilities,omitempty" yaml:"requiredCapabilities,omitempty"`
+	Metadata             map[string]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 }
 
-// Handler owns validation rules for one managed resource kind.
+// DetectionRequest describes an agent-neutral discovery request. Runtime
+// locations are intentionally supplied by the integration, not this contract.
+type DetectionRequest struct {
+	Kind Kind
+}
+
+// Inspection is the stable result of examining a managed resource.
+type Inspection struct {
+	Resource ManagedResource
+	Warnings []string
+}
+
+// PlanRequest supplies target capabilities without exposing runtime paths.
+type PlanRequest struct {
+	Capabilities []Capability
+}
+
+// PlacementPlan is an agent-neutral operation description. An adapter may
+// translate it into a runtime-specific destination when applying the plan.
+type PlacementPlan struct {
+	Resource     ManagedResource
+	Capabilities []Capability
+	Missing      []Capability
+	Warnings     []string
+}
+
+// ResourceHandler owns discovery, inspection, validation, and lifecycle
+// planning rules for one managed resource kind.
+type ResourceHandler interface {
+	Kind() Kind
+	Detect(DetectionRequest) ([]ManagedResource, error)
+	Inspect(ManagedResource) (Inspection, error)
+	Validate(ManagedResource) error
+	Plan(ManagedResource, PlanRequest) (PlacementPlan, error)
+}
+
+// Handler is the legacy validation-only contract retained for source
+// compatibility. New code should use ResourceHandler.
 type Handler interface {
 	Kind() Kind
 	Validate(ManagedResource) error
@@ -61,11 +99,36 @@ func NewSkillHandler() SkillHandler { return SkillHandler{} }
 
 func (SkillHandler) Kind() Kind { return Skill }
 
+func (SkillHandler) Detect(request DetectionRequest) ([]ManagedResource, error) {
+	if request.Kind != "" && request.Kind != Skill {
+		return nil, fmt.Errorf("Skill handler does not support resource kind %q", request.Kind)
+	}
+	return nil, nil
+}
+
+func (h SkillHandler) Inspect(managed ManagedResource) (Inspection, error) {
+	if err := h.Validate(managed); err != nil {
+		return Inspection{}, err
+	}
+	return Inspection{Resource: managed}, nil
+}
+
 func (SkillHandler) Validate(managed ManagedResource) error {
 	if managed.Kind != Skill {
 		return fmt.Errorf("Skill handler does not support resource kind %q", managed.Kind)
 	}
 	return managed.Validate()
+}
+
+func (h SkillHandler) Plan(managed ManagedResource, request PlanRequest) (PlacementPlan, error) {
+	if err := h.Validate(managed); err != nil {
+		return PlacementPlan{}, err
+	}
+	return PlacementPlan{
+		Resource:     managed,
+		Capabilities: append([]Capability(nil), request.Capabilities...),
+		Missing:      MissingCapabilities(managed.RequiredCapabilities, request.Capabilities),
+	}, nil
 }
 
 // Validate rejects unsafe or unsupported resource contract values.
@@ -98,4 +161,20 @@ func validCapability(capability Capability) bool {
 	default:
 		return false
 	}
+}
+
+// MissingCapabilities returns required capabilities absent from supported in
+// the stable order requested by the resource contract.
+func MissingCapabilities(required, supported []Capability) []Capability {
+	present := make(map[Capability]struct{}, len(supported))
+	for _, capability := range supported {
+		present[capability] = struct{}{}
+	}
+	missing := make([]Capability, 0, len(required))
+	for _, capability := range required {
+		if _, ok := present[capability]; !ok {
+			missing = append(missing, capability)
+		}
+	}
+	return missing
 }

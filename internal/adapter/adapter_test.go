@@ -52,3 +52,24 @@ func TestValidateIdentifierRejectsTraversalAndPathForms(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSupportedAdaptersExposeAgentNeutralLifecycleContract(t *testing.T) {
+	for _, a := range adapter.Supported() {
+		var contract adapter.AgentAdapter = a
+		status := contract.Detect()
+		if status.Target != a.Target() || !status.Available {
+			t.Fatalf("Detect() = %#v, want available %q", status, a.Target())
+		}
+		item := resource.ManagedResource{Version: "v1", ID: "demo", Kind: resource.Skill}
+		if _, err := contract.Inspect(resource.Skill, item); err != nil {
+			t.Fatalf("Inspect() error = %v", err)
+		}
+		plan, err := contract.Plan(resource.Skill, item)
+		if err != nil {
+			t.Fatalf("Plan() error = %v", err)
+		}
+		if plan.Resource.ID != item.ID {
+			t.Fatalf("Plan() resource ID = %q, want %q", plan.Resource.ID, item.ID)
+		}
+	}
+}

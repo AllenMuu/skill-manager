@@ -55,3 +55,38 @@ func TestSkillHandlerAcceptsOnlySkillResources(t *testing.T) {
 		t.Fatal("Validate(SubAgent) error = nil")
 	}
 }
+
+func TestMissingCapabilitiesPreservesRequiredOrder(t *testing.T) {
+	missing := resource.MissingCapabilities(
+		[]resource.Capability{resource.CapabilityFilesystemRead, resource.CapabilityFilesystemWrite, resource.CapabilityMemorySearch},
+		[]resource.Capability{resource.CapabilityFilesystemRead},
+	)
+	want := []resource.Capability{resource.CapabilityFilesystemWrite, resource.CapabilityMemorySearch}
+	if len(missing) != len(want) {
+		t.Fatalf("MissingCapabilities() = %v, want %v", missing, want)
+	}
+	for i := range want {
+		if missing[i] != want[i] {
+			t.Fatalf("MissingCapabilities() = %v, want %v", missing, want)
+		}
+	}
+}
+
+func TestResourceHandlerContractIsAgentNeutral(t *testing.T) {
+	var handler resource.ResourceHandler = resource.NewSkillHandler()
+	item := resource.ManagedResource{Version: "v1", ID: "demo", Kind: resource.Skill}
+	inspection, err := handler.Inspect(item)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+	if inspection.Resource.ID != item.ID {
+		t.Fatalf("Inspect() resource ID = %q, want %q", inspection.Resource.ID, item.ID)
+	}
+	plan, err := handler.Plan(item, resource.PlanRequest{})
+	if err != nil {
+		t.Fatalf("Plan() error = %v", err)
+	}
+	if plan.Resource.ID != item.ID {
+		t.Fatalf("Plan() resource ID = %q, want %q", plan.Resource.ID, item.ID)
+	}
+}
