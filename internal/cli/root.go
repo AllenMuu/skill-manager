@@ -44,6 +44,7 @@ func newRootCommand(name string, deprecated bool) *cobra.Command {
 	root.PersistentFlags().StringVar(&options.configPath, "config", "", "path to Agent Manager configuration")
 	root.AddCommand(newSearchCommand(options))
 	root.AddCommand(newAgentsCommand())
+	root.AddCommand(newSubAgentsCommand(options))
 	root.AddCommand(newInitCommand())
 	root.AddCommand(newRecommendCommand(options))
 	root.AddCommand(newProjectCommands(options)...)
