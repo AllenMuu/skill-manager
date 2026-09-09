@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/AllenMuu/skill-manager/internal/resource"
 	"github.com/AllenMuu/skill-manager/internal/subagent"
@@ -110,7 +112,12 @@ func (a directoryAdapter) subAgentPlan(definition subagent.Definition, request S
 	case Codex:
 		plan.Format = "codex-toml"
 		plan.Destination = filepath.Join(base, ".codex", "agents", definition.ID+".toml")
-		plan.Content = renderCodexSubAgent(definition)
+		var err error
+		plan.Content, err = renderCodexSubAgent(definition)
+		if err != nil {
+			plan.UnsupportedFields = []string{"rendered content: " + err.Error()}
+			return plan
+		}
 		plan.UnsupportedFields = unsupportedCanonicalFields(definition)
 	case Pi:
 		// Pi's documented native locations contain skills, settings, and
@@ -153,12 +160,60 @@ func renderClaudeSubAgent(definition subagent.Definition) string {
 	return "---\nname: " + definition.ID + "\ndescription: " + strconv.Quote(description) + "\n---\n\n" + definition.Instructions + "\n"
 }
 
-func renderCodexSubAgent(definition subagent.Definition) string {
+func renderCodexSubAgent(definition subagent.Definition) (string, error) {
 	description := definition.Name
 	if definition.Role != "" {
 		description += " — " + definition.Role
 	}
-	return "name = " + strconv.Quote(definition.ID) + "\ndescription = " + strconv.Quote(description) + "\ndeveloper_instructions = " + strconv.Quote(definition.Instructions) + "\n"
+	id, err := tomlQuote(definition.ID)
+	if err != nil {
+		return "", fmt.Errorf("id: %w", err)
+	}
+	desc, err := tomlQuote(description)
+	if err != nil {
+		return "", fmt.Errorf("description: %w", err)
+	}
+	instructions, err := tomlQuote(definition.Instructions)
+	if err != nil {
+		return "", fmt.Errorf("developer_instructions: %w", err)
+	}
+	return "name = " + id + "\ndescription = " + desc + "\ndeveloper_instructions = " + instructions + "\n", nil
+}
+
+// tomlQuote emits a TOML basic string. Go's strconv.Quote is not suitable:
+// it may emit escapes such as \\a and \\xNN that TOML does not recognize.
+func tomlQuote(value string) (string, error) {
+	if !utf8.ValidString(value) {
+		return "", errors.New("invalid UTF-8")
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range value {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\u%04X`, r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	b.WriteByte('"')
+	return b.String(), nil
 }
 
 // InspectSubAgent is a convenience for a project-scoped preview.

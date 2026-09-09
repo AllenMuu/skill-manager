@@ -11,6 +11,8 @@ import (
 	"github.com/AllenMuu/skill-manager/internal/operation"
 	"github.com/AllenMuu/skill-manager/internal/resource"
 	"github.com/AllenMuu/skill-manager/internal/subagent"
+	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v3"
 )
 
 func TestClaudeCodeSubAgentPlanRendersNativeMarkdownAndSurfacesUnrepresentableFields(t *testing.T) {
@@ -72,6 +74,55 @@ func TestCodexSubAgentPlanRendersNativeTOMLAndSurfacesUnrepresentableFields(t *t
 	}
 	if !containsString(plan.UnsupportedFields, "skills") || !containsString(plan.UnsupportedFields, "compatibility") {
 		t.Fatalf("unsupported fields = %#v", plan.UnsupportedFields)
+	}
+}
+
+func TestCodexSubAgentPlanRoundTripsCanonicalTextThroughTOML(t *testing.T) {
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Name \"quoted\"\a", Role: "Role \\ path", Instructions: "line one\nline two\twith tab and \\ slash"}
+	a, ok := adapter.ForAgent(adapter.Codex)
+	if !ok {
+		t.Fatal("Codex adapter is unavailable")
+	}
+	plan, err := a.PlanSubAgent(definition, adapter.SubAgentRequest{Root: "/project", Scope: adapter.SubAgentProject})
+	if err != nil {
+		t.Fatalf("PlanSubAgent() error = %v", err)
+	}
+	var decoded struct {
+		Name                  string `toml:"name"`
+		Description           string `toml:"description"`
+		DeveloperInstructions string `toml:"developer_instructions"`
+	}
+	if _, err := toml.Decode(plan.Content, &decoded); err != nil {
+		t.Fatalf("rendered Codex TOML did not parse: %v\n%s", err, plan.Content)
+	}
+	if decoded.Name != definition.ID || decoded.Description != definition.Name+" — "+definition.Role || decoded.DeveloperInstructions != definition.Instructions {
+		t.Fatalf("decoded TOML = %#v", decoded)
+	}
+}
+
+func TestClaudeCodeSubAgentPlanRendersParseableMarkdownFrontmatter(t *testing.T) {
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: `Name: "quoted"`, Role: "Role", Instructions: "line one\nline two"}
+	a, ok := adapter.ForAgent(adapter.ClaudeCode)
+	if !ok {
+		t.Fatal("Claude Code adapter is unavailable")
+	}
+	plan, err := a.PlanSubAgent(definition, adapter.SubAgentRequest{Root: "/project", Scope: adapter.SubAgentProject})
+	if err != nil {
+		t.Fatalf("PlanSubAgent() error = %v", err)
+	}
+	parts := strings.SplitN(plan.Content, "---\n", 3)
+	if len(parts) != 3 {
+		t.Fatalf("Markdown plan does not have YAML frontmatter: %q", plan.Content)
+	}
+	var frontmatter struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description"`
+	}
+	if err := yaml.Unmarshal([]byte(parts[1]), &frontmatter); err != nil {
+		t.Fatalf("frontmatter did not parse as YAML: %v", err)
+	}
+	if frontmatter.Name != definition.ID || frontmatter.Description != definition.Name+" — "+definition.Role {
+		t.Fatalf("frontmatter = %#v", frontmatter)
 	}
 }
 
