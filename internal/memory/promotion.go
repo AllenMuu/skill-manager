@@ -102,6 +102,12 @@ type GraphitiWriter struct {
 }
 
 func (w GraphitiWriter) Write(ctx context.Context, request PromotionRequest) error {
+	if !request.Confirmed {
+		return ErrPromotionNotConfirmed
+	}
+	if request.Source == SourceConversation {
+		return fmt.Errorf("agent conversation data cannot be promoted")
+	}
 	if w.Config.Configuration.Kind != "env" {
 		return fmt.Errorf("Graphiti promotion requires an environment URL reference")
 	}

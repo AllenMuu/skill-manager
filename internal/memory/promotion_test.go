@@ -72,6 +72,27 @@ func TestGraphitiWriterWritesOnlyAfterPromotionServiceConfirmation(t *testing.T)
 	}
 }
 
+func TestGraphitiWriterRejectsUnconfirmedOrConversationWrites(t *testing.T) {
+	t.Setenv("GRAPHITI_URL", "http://graphiti.test")
+	cfg := memory.ProviderConfig{Version: "v1", ID: "local", Provider: "graphiti", Configuration: memory.ConfigReference{Kind: "env", Name: "GRAPHITI_URL"}, Scopes: []memory.Scope{memory.ScopeProject}, Capabilities: []memory.Capability{memory.CapabilityWrite}}
+	calls := 0
+	writer := memory.GraphitiWriter{Config: cfg, HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusCreated, Body: io.NopCloser(strings.NewReader("{}")), Header: make(http.Header)}, nil
+	})}}
+	for _, request := range []memory.PromotionRequest{
+		{Content: "unconfirmed", Scope: memory.ScopeProject},
+		{Content: "transcript", Scope: memory.ScopeProject, Source: memory.SourceConversation, Confirmed: true},
+	} {
+		if err := writer.Write(context.Background(), request); err == nil {
+			t.Fatalf("Write(%#v) error = nil, want rejection", request)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("writer made %d HTTP requests for rejected writes", calls)
+	}
+}
+
 type recordingWriter struct {
 	calls   int
 	request memory.PromotionRequest
