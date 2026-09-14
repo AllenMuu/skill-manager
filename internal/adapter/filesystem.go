@@ -65,22 +65,8 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 	if err != nil {
 		return operation.Plan{}, err
 	}
-	if info, err := os.Lstat(source); err != nil {
-		if !os.IsNotExist(err) || options.SourceContent == nil {
-			return operation.Plan{}, fmt.Errorf("inspect resource source: %w", err)
-		}
-	} else if plan.Resource.Kind == resource.SubAgent && info.Mode().IsRegular() {
-		if options.SourceContent == nil {
-			return operation.Plan{}, fmt.Errorf("%w: resource source must be a directory or managed SubAgent file", ErrUnsafePath)
-		}
-		existing, readErr := os.ReadFile(source)
-		if readErr != nil || !bytes.Equal(existing, options.SourceContent) {
-			return operation.Plan{}, fmt.Errorf("%w: refusing to replace an existing rendered SubAgent source", ErrUnsafePath)
-		}
-	} else if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
-		// Rendered SubAgents are regular files; Skills remain directories.
-	} else {
-		return operation.Plan{}, fmt.Errorf("%w: resource source must be a directory or managed SubAgent file", ErrUnsafePath)
+	if err := verifyPlacementSource(source, plan.Resource.Kind, options.SourceContent); err != nil {
+		return operation.Plan{}, err
 	}
 	conflict, err := destinationConflict(destination, source)
 	if err != nil {
@@ -108,10 +94,8 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 	// Re-check the source and destination after confirmation to close the
 	// concurrent-edit window. Capture happens only after confirmation so a
 	// declined preview leaves no journal backup behind.
-	if options.SourceContent == nil {
-		if err := verifySource(source, plan.Resource.Kind == resource.SubAgent); err != nil {
-			return preview, err
-		}
+	if err := verifyPlacementSource(source, plan.Resource.Kind, options.SourceContent); err != nil {
+		return preview, err
 	}
 	conflict, err = destinationConflict(destination, source)
 	if err != nil {
@@ -165,6 +149,26 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 		return preview, errors.Join(err, options.Journal.Restore(before))
 	}
 	return preview, nil
+}
+
+func verifyPlacementSource(source string, kind resource.Kind, content []byte) error {
+	info, err := os.Lstat(source)
+	if os.IsNotExist(err) && content != nil {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect resource source: %w", err)
+	}
+	if kind == resource.SubAgent && info.Mode().IsRegular() && content != nil {
+		existing, err := os.ReadFile(source)
+		if err == nil && bytes.Equal(existing, content) {
+			return nil
+		}
+	}
+	if info.IsDir() && info.Mode()&os.ModeSymlink == 0 && content == nil {
+		return nil
+	}
+	return fmt.Errorf("%w: refusing to replace an existing resource source", ErrUnsafePath)
 }
 
 func matchesSnapshot(snapshot operation.Snapshot) bool {
