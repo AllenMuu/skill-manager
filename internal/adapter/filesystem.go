@@ -104,28 +104,39 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 	if conflict && (options.Conflict != ConflictReplace || !options.Force) {
 		return preview, ErrUnsafePath
 	}
-	paths := []string{destination}
+	// Rendered sources live under the shared Agent Manager root. They are
+	// reproducible cache entries, not project-owned operation state, so a
+	// project's undo must never remove a source another project still links.
+	sourceMissing := false
 	if options.SourceContent != nil {
-		paths = append([]string{source}, paths...)
+		_, sourceErr := os.Lstat(source)
+		sourceMissing = os.IsNotExist(sourceErr)
+		if sourceErr != nil && !sourceMissing {
+			return preview, sourceErr
+		}
 	}
+	paths := []string{destination}
 	before, err := options.Journal.Capture(paths)
 	if err != nil {
 		return preview, err
 	}
-	if options.SourceContent != nil {
+	if options.SourceContent != nil && sourceMissing {
 		if err := writeManagedSource(source, options.SourceContent); err != nil {
-			return preview, errors.Join(err, options.Journal.Restore(before))
+			return preview, err
 		}
 		if err := verifySource(source, true); err != nil {
-			return preview, errors.Join(err, options.Journal.Restore(before))
+			return preview, errors.Join(err, os.Remove(source))
 		}
+	}
+	cleanupSource := func() error {
+		if sourceMissing {
+			return os.Remove(source)
+		}
+		return nil
 	}
 	if options.BeforePublish != nil {
 		if err := options.BeforePublish(); err != nil {
-			if options.SourceContent != nil {
-				return preview, errors.Join(err, options.Journal.Restore(before))
-			}
-			return preview, err
+			return preview, errors.Join(err, cleanupSource())
 		}
 	}
 	conflictSnapshot := before[len(before)-1]
@@ -136,17 +147,20 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 		// A rejected late conflict has not mutated the destination; restoring an
 		// empty snapshot here would wrongly delete the unmanaged file that won
 		// the race.
-		if options.SourceContent != nil || (conflict && !errors.Is(err, errLateConflict)) {
-			return preview, errors.Join(err, options.Journal.Restore(before))
+		if errors.Is(err, errLateConflict) {
+			return preview, errors.Join(err, cleanupSource())
 		}
-		return preview, err
+		if conflict {
+			return preview, errors.Join(err, options.Journal.Restore(before), cleanupSource())
+		}
+		return preview, errors.Join(err, cleanupSource())
 	}
 	after, err := options.Journal.Capture(paths)
 	if err != nil {
-		return preview, errors.Join(err, options.Journal.Restore(before))
+		return preview, errors.Join(err, options.Journal.Restore(before), cleanupSource())
 	}
 	if err := options.Journal.RecordPlan(preview, before, after); err != nil {
-		return preview, errors.Join(err, options.Journal.Restore(before))
+		return preview, errors.Join(err, options.Journal.Restore(before), cleanupSource())
 	}
 	return preview, nil
 }
