@@ -36,6 +36,42 @@ func TestLatestNormalizesLegacyJournalEntryWithoutRewritingFile(t *testing.T) {
 	}
 }
 
+func TestUndoLatestRestoresLegacyJournalEntry(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "project", "skill")
+	journalPath := filepath.Join(root, "journal.json")
+	journal := operation.New(journalPath)
+	before, err := journal.Capture([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/library/demo", path); err != nil {
+		t.Fatal(err)
+	}
+	after, err := journal.Capture([]string{path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := []map[string]any{{"operation": "activate", "at": "2026-01-01T00:00:00Z", "before": before, "after": after}}
+	contents, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(journalPath, contents, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := journal.UndoLatest(func(operation.Plan) bool { return true }); err != nil {
+		t.Fatalf("UndoLatest() error = %v", err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("restored legacy path = %v, want absent", err)
+	}
+}
+
 func TestPlanRendersChangesAndWarnings(t *testing.T) {
 	plan := operation.Plan{Operation: "activate", Changes: []operation.Change{{Path: "/project/.codex/skills/demo", Action: "create link", Detail: "/library/demo"}}, Warnings: []string{"not declared compatible with codex"}}
 	if got := plan.String(); got == "" || !strings.Contains(got, "create link") || !strings.Contains(got, "not declared compatible") {

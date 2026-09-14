@@ -99,3 +99,19 @@ func validCapability(capability Capability) bool {
 		return false
 	}
 }
+
+// MissingCapabilities returns required capabilities absent from supported in
+// the stable order requested by the resource contract.
+func MissingCapabilities(required, supported []Capability) []Capability {
+	present := make(map[Capability]struct{}, len(supported))
+	for _, capability := range supported {
+		present[capability] = struct{}{}
+	}
+	missing := make([]Capability, 0, len(required))
+	for _, capability := range required {
+		if _, ok := present[capability]; !ok {
+			missing = append(missing, capability)
+		}
+	}
+	return missing
+}

@@ -55,3 +55,19 @@ func TestSkillHandlerAcceptsOnlySkillResources(t *testing.T) {
 		t.Fatal("Validate(SubAgent) error = nil")
 	}
 }
+
+func TestMissingCapabilitiesPreservesRequiredOrder(t *testing.T) {
+	missing := resource.MissingCapabilities(
+		[]resource.Capability{resource.CapabilityFilesystemRead, resource.CapabilityFilesystemWrite, resource.CapabilityMemorySearch},
+		[]resource.Capability{resource.CapabilityFilesystemRead},
+	)
+	want := []resource.Capability{resource.CapabilityFilesystemWrite, resource.CapabilityMemorySearch}
+	if len(missing) != len(want) {
+		t.Fatalf("MissingCapabilities() = %v, want %v", missing, want)
+	}
+	for i := range want {
+		if missing[i] != want[i] {
+			t.Fatalf("MissingCapabilities() = %v, want %v", missing, want)
+		}
+	}
+}

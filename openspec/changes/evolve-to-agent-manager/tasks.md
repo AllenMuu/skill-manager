@@ -3,7 +3,7 @@
 - [x] 1.1 Inventory the current Skill CLI entrypoints, configuration, companion metadata, project links, and journal formats; add legacy fixtures and verify they reproduce existing `go test ./...` behavior.
 - [x] 1.2 Introduce `agent-manager` as the primary binary and route `skill-manager` through the same command implementation with a deprecation notice; verify existing command arguments retain equivalent outcomes.
 - [x] 1.3 Update `CONTEXT.md`, README command examples, and user-facing diagnostics to use Agent Manager for the product and Skill for the resource domain; verify terminology preserves the documented glossary distinctions.
-- [ ] 1.4 Add versioned readers that normalize legacy Skill configuration and journal entries without rewriting them; verify a pre-migration activation can be listed and undone.
+- [x] 1.4 Add versioned readers that normalize legacy Skill configuration and journal entries without rewriting them; verify a pre-migration activation can be listed and undone.
 - [x] 1.5 Write an ADR for core resource contracts, agent adapters, provider boundaries, and compatibility guarantees; verify it records rejected alternatives from `design.md`.
 
 ## 2. Agent and resource governance core
