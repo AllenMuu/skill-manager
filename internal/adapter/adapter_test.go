@@ -77,6 +77,15 @@ func TestCodexSubAgentPlanRetainsCanonicalControlPlaneFields(t *testing.T) {
 	}
 }
 
+func TestSubAgentPlanRejectsUndeclaredCompatibilityTarget(t *testing.T) {
+	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Reviewer", Role: "Reviews", Instructions: "Review.", Compatibility: resource.Compatibility{Agents: []string{"codex"}}}
+	a, _ := adapter.ForAgent(adapter.ClaudeCode)
+	plan, err := a.PlanSubAgent(definition, adapter.SubAgentRequest{Root: "/project", Scope: adapter.SubAgentProject})
+	if !errors.Is(err, adapter.ErrSubAgentUnsupported) || !containsString(plan.UnsupportedFields, "compatibility: target is not declared compatible") {
+		t.Fatalf("PlanSubAgent() = %#v, %v", plan, err)
+	}
+}
+
 func TestCodexSubAgentPlanRoundTripsCanonicalTextThroughTOML(t *testing.T) {
 	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Name \"quoted\"\a", Role: "Role \\ path", Instructions: "line one\nline two\twith tab and \\ slash"}
 	a, ok := adapter.ForAgent(adapter.Codex)

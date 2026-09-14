@@ -123,6 +123,9 @@ func (a directoryAdapter) subAgentPlan(definition subagent.Definition, request S
 		// definition format. Never guess a write location.
 		plan.UnsupportedFields = []string{"id", "name", "role", "instructions", "skills", "compatibility", "requiredCapabilities"}
 	}
+	if len(definition.Compatibility.Agents) > 0 && !containsTarget(definition.Compatibility.Agents, a.target) {
+		plan.UnsupportedFields = append(plan.UnsupportedFields, "compatibility: target is not declared compatible")
+	}
 	plan.UnsupportedCapabilities = unsupportedSubAgentCapabilities(a, definition.RequiredCapabilities)
 	return plan
 }
@@ -144,7 +147,7 @@ func renderClaudeSubAgent(definition subagent.Definition) string {
 	if definition.Role != "" {
 		description += " — " + definition.Role
 	}
-	return "---\nname: " + definition.ID + "\ndescription: " + strconv.Quote(description) + "\n---\n\n" + definition.Instructions + "\n"
+	return "---\nname: " + definition.ID + "\ndescription: " + strconv.Quote(description) + "\n---\n\n" + renderedInstructions(definition) + "\n"
 }
 
 func renderCodexSubAgent(definition subagent.Definition) (string, error) {
@@ -160,11 +163,31 @@ func renderCodexSubAgent(definition subagent.Definition) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("description: %w", err)
 	}
-	instructions, err := tomlQuote(definition.Instructions)
+	instructions, err := tomlQuote(renderedInstructions(definition))
 	if err != nil {
 		return "", fmt.Errorf("developer_instructions: %w", err)
 	}
 	return "name = " + id + "\ndescription = " + desc + "\ndeveloper_instructions = " + instructions + "\n", nil
+}
+
+func containsTarget(targets []string, target Target) bool {
+	for _, value := range targets {
+		if value == string(target) {
+			return true
+		}
+	}
+	return false
+}
+
+func renderedInstructions(definition subagent.Definition) string {
+	text := definition.Instructions
+	if len(definition.Skills) > 0 {
+		text += "\n\nManaged Skills: " + strings.Join(definition.Skills, ", ")
+	}
+	if len(definition.Compatibility.Agents) > 0 {
+		text += "\nCompatible agents: " + strings.Join(definition.Compatibility.Agents, ", ")
+	}
+	return text
 }
 
 // tomlQuote emits a TOML basic string. Go's strconv.Quote is not suitable:
