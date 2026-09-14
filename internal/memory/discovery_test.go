@@ -58,6 +58,17 @@ func TestGraphitiDiscoveryHonorsExplicitEmptyMetadata(t *testing.T) {
 	}
 }
 
+func TestGraphitiDiscoveryIgnoresAllMalformedMixedMetadata(t *testing.T) {
+	t.Setenv("GRAPHITI_URL", "http://graphiti.test")
+	cfg := memory.ProviderConfig{Version: "v1", ID: "local", Provider: "graphiti", Configuration: memory.ConfigReference{Kind: "env", Name: "GRAPHITI_URL"}, Scopes: []memory.Scope{memory.ScopeUser}, Capabilities: []memory.Capability{memory.CapabilityRead}}
+	result := memory.GraphitiAdapter{}.Discover(context.Background(), cfg, memory.DiscoveryOptions{AllowNetwork: true, HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"capabilities":[],"scopes":"malformed"}`)), Header: make(http.Header)}, nil
+	})}})
+	if len(result.Capabilities) != 1 || result.Capabilities[0] != memory.CapabilityRead || len(result.Scopes) != 1 || result.Scopes[0] != memory.ScopeUser {
+		t.Fatalf("result = %#v, want configured metadata preserved after malformed response", result)
+	}
+}
+
 func TestGraphitiDiscoveryUnavailableProbeIsActionableAndRedacted(t *testing.T) {
 	t.Setenv("GRAPHITI_URL", "http://graphiti.test/?token=super-secret")
 	cfg := memory.ProviderConfig{Version: "v1", ID: "local", Provider: "graphiti", Configuration: memory.ConfigReference{Kind: "env", Name: "GRAPHITI_URL"}, Scopes: []memory.Scope{memory.ScopeUser}}

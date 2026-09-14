@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -215,7 +216,8 @@ func (GraphitiAdapter) Discover(ctx context.Context, cfg ProviderConfig, options
 		Capabilities *[]Capability `json:"capabilities"`
 		Scopes       *[]Scope      `json:"scopes"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&metadata) == nil {
+	metadataBytes, readErr := io.ReadAll(resp.Body)
+	if readErr == nil && json.Unmarshal(metadataBytes, &metadata) == nil {
 		if metadata.Capabilities != nil {
 			result.Capabilities = *metadata.Capabilities
 		}
