@@ -24,15 +24,15 @@
 
 ## 4. Canonical SubAgent lifecycle
 
-- [ ] 4.1 Define versioned canonical SubAgent storage, schema validation, and registry discovery under the Agent Manager data root; verify malformed definitions and missing Skill references produce actionable errors.
-- [ ] 4.2 Add SubAgent list, show, and validate command surfaces with JSON output; verify canonical details remain independent of target-native renderings.
-- [ ] 4.3 Implement target-specific SubAgent inspection and render plans through Claude Code, Codex, and Pi adapters; verify every unsupported field or capability is surfaced explicitly.
-- [ ] 4.4 Implement confirmed, conflict-protected SubAgent installation and removal for adapters with a filesystem representation; verify a successful operation is journaled, undoable, and never overwrites unmanaged content without force confirmation.
+- [x] 4.1 Define versioned canonical SubAgent storage, schema validation, and registry discovery under the Agent Manager data root; verify malformed definitions and missing Skill references produce actionable errors.
+- [x] 4.2 Add SubAgent list, show, and validate command surfaces with JSON output; verify canonical details remain independent of target-native renderings.
+- [x] 4.3 Implement target-specific SubAgent inspection and render plans through Claude Code, Codex, and Pi adapters; verify every unsupported field or capability is surfaced explicitly.
+- [x] 4.4 Implement confirmed, conflict-protected SubAgent installation and removal for adapters with a filesystem representation; verify a successful operation is journaled, undoable, and never overwrites unmanaged content without force confirmation.
 - [x] 4.5 Add fixtures and end-to-end tests for successful installation, unsupported capabilities, missing referenced Skills, conflicts, rollback, and undo; verify `go test ./...` passes.
 
 ## 5. Shared Memory provider foundation
 
-- [ ] 5.1 Define versioned Memory provider configuration, non-secret configuration references, user/project scopes, and read/write/search capability models; verify sensitive values are redacted from output and journal evidence.
+- [x] 5.1 Define versioned Memory provider configuration, non-secret configuration references, user/project scopes, and read/write/search capability models; verify sensitive values are redacted from output and journal evidence.
 - [ ] 5.2 Select one feasible provider adapter after documenting local integration constraints; implement provider capability discovery without enabling network access by default, and verify an unavailable provider yields actionable status.
 - [ ] 5.3 Implement explicit provider configuration and `memory status` output with per-agent capability mapping; verify it distinguishes configured, available, unavailable, and unsupported states.
 - [ ] 5.4 Implement explicit knowledge-promotion flow with scope and confirmation requirements; verify ordinary resource operations and agent conversation data never trigger provider writes.
