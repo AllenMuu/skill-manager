@@ -78,7 +78,7 @@ func (GraphitiAdapter) Discover(ctx context.Context, cfg ProviderConfig, options
 	if client == nil {
 		client = &http.Client{Timeout: 3 * time.Second}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(url, "/")+"/health", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(url, "/")+"/healthcheck", nil)
 	if err != nil {
 		result.Reason = "Graphiti endpoint URL is invalid"
 		result.NextAction = "correct the referenced endpoint URL"
@@ -94,7 +94,7 @@ func (GraphitiAdapter) Discover(ctx context.Context, cfg ProviderConfig, options
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		result.Reason = fmt.Sprintf("Graphiti health check returned HTTP %d", resp.StatusCode)
-		result.NextAction = "verify the Graphiti service and its health endpoint"
+		result.NextAction = "verify the Graphiti service and its healthcheck endpoint"
 		return result
 	}
 	result.Status = ProviderAvailable

@@ -28,8 +28,8 @@ func TestGraphitiDiscoveryUsesExplicitNetworkOptInAndReportsCapabilities(t *test
 	t.Setenv("GRAPHITI_URL", "http://graphiti.test")
 	cfg := memory.ProviderConfig{Version: "v1", ID: "local", Provider: "graphiti", Configuration: memory.ConfigReference{Kind: "env", Name: "GRAPHITI_URL"}, Scopes: []memory.Scope{memory.ScopeUser, memory.ScopeProject}, Capabilities: []memory.Capability{memory.CapabilityRead}}
 	result := memory.GraphitiAdapter{}.Discover(context.Background(), cfg, memory.DiscoveryOptions{AllowNetwork: true, HTTPClient: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/health" {
-			t.Fatalf("path = %s, want /health", r.URL.Path)
+		if r.URL.Path != "/healthcheck" {
+			t.Fatalf("path = %s, want /healthcheck", r.URL.Path)
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"capabilities":["read","search"],"scopes":["project"]}`)), Header: make(http.Header)}, nil
 	})}})

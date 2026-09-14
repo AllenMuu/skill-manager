@@ -104,7 +104,7 @@ user-managed Graphiti HTTP service and a `v1` provider configuration referring
 to its base URL through an environment variable such as `GRAPHITI_URL`.
 Credentials stay outside Agent Manager. Discovery is read-only and has network
 access disabled by default; an explicit status/discovery caller must opt in to
-the `GET /health` probe. If Graphiti is not configured or reachable, status
+the `GET /healthcheck` probe. If Graphiti is not configured or reachable, status
 reports the reason and an actionable next step. Agent Manager does not install,
 start, or write to Graphiti, and it never copies Skills or conversation data
 into shared Memory implicitly.

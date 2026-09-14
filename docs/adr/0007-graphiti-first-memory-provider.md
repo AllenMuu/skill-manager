@@ -19,3 +19,5 @@ an unavailable service produces a reason and a next action. Optional health
 metadata may advertise narrower capabilities and scopes, but malformed
 metadata does not turn a healthy endpoint into a write operation. Provider
 writes remain outside this task and require a future explicit promotion flow.
+
+The probe uses Graphiti's standard `GET /healthcheck` endpoint.
