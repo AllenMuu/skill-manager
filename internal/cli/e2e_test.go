@@ -190,7 +190,7 @@ func TestMemoryStatusReportsConfiguredProviderAndPerAgentCapabilities(t *testing
 	if strings.Contains(out.String(), "GRAPHITI_URL") || strings.Contains(out.String(), "secret") {
 		t.Fatalf("status leaked sensitive data: %s", out.String())
 	}
-	for _, want := range []string{`"status":"configured"`, `"agent":"claude-code"`, `"status":"unsupported"`} {
+	for _, want := range []string{`"status":"configured"`, `"agent":"claude-code"`, `"status":"unsupported"`, `"status":"configured"`} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("status output=%s; missing %s", out.String(), want)
 		}

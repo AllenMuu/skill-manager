@@ -78,12 +78,30 @@ func SummarizeStatus(cfg ProviderConfig, agents []AgentAccess, options Discovery
 		mapped := AgentStatus{Agent: agent.Agent, Capabilities: make([]CapabilityMapping, 0, len(cfg.Capabilities)*len(cfg.Scopes))}
 		for _, scope := range cfg.Scopes {
 			for _, capability := range cfg.Capabilities {
-				mapped.Capabilities = append(mapped.Capabilities, CapabilityMapping{Capability: capability, Scope: scope, Status: CapabilityUnsupported, Reason: "agent has no verified shared-memory integration"})
+				mapping := CapabilityMapping{Capability: capability, Scope: scope, Status: CapabilityUnsupported, Reason: "agent does not declare this shared-memory capability or scope"}
+				if agent.Supports(capability, scope) {
+					mapping.Status = capabilityStatus(provider.Status)
+					mapping.Reason = ""
+				}
+				mapped.Capabilities = append(mapped.Capabilities, mapping)
 			}
 		}
 		result.Agents = append(result.Agents, mapped)
 	}
 	return result
+}
+
+func capabilityStatus(provider ProviderStatus) CapabilityStatus {
+	switch provider {
+	case ProviderConfigured:
+		return CapabilityConfigured
+	case ProviderAvailable:
+		return CapabilityAvailable
+	case ProviderUnavailable:
+		return CapabilityUnavailable
+	default:
+		return CapabilityUnsupported
+	}
 }
 
 // DiscoveryOptions controls side effects. Network access is opt-in; callers
