@@ -15,10 +15,76 @@ import (
 type ProviderStatus string
 
 const (
+	ProviderConfigured  ProviderStatus = "configured"
 	ProviderAvailable   ProviderStatus = "available"
 	ProviderUnavailable ProviderStatus = "unavailable"
 	ProviderUnsupported ProviderStatus = "unsupported"
 )
+
+type CapabilityStatus string
+
+const (
+	CapabilityConfigured  CapabilityStatus = "configured"
+	CapabilityAvailable   CapabilityStatus = "available"
+	CapabilityUnavailable CapabilityStatus = "unavailable"
+	CapabilityUnsupported CapabilityStatus = "unsupported"
+)
+
+type CapabilityMapping struct {
+	Capability Capability       `json:"capability"`
+	Scope      Scope            `json:"scope"`
+	Status     CapabilityStatus `json:"status"`
+	Reason     string           `json:"reason,omitempty"`
+}
+
+type AgentStatus struct {
+	Agent        string              `json:"agent"`
+	Capabilities []CapabilityMapping `json:"capabilities"`
+}
+
+type StatusSummary struct {
+	Provider DiscoveryResult `json:"provider"`
+	Agents   []AgentStatus   `json:"agents"`
+}
+
+// SummarizeStatus combines provider discovery with an explicit mapping of
+// provider capabilities to agent integrations. Agent Manager currently has no
+// verified native shared-memory channel, so mappings remain unsupported until
+// an adapter declares one; this is intentionally different from provider
+// availability.
+func SummarizeStatus(cfg ProviderConfig, agents []AgentAccess, options DiscoveryOptions) StatusSummary {
+	provider := DiscoveryResult{ID: cfg.ID, Provider: cfg.Provider, Status: ProviderUnavailable}
+	if cfg.Provider != "graphiti" {
+		provider.Status = ProviderUnsupported
+		provider.Reason = "no adapter is registered for the configured provider"
+		provider.NextAction = "configure provider: graphiti"
+	} else if err := cfg.Validate(); err != nil {
+		provider.Status = ProviderUnavailable
+		provider.Reason = "provider configuration is invalid"
+		provider.NextAction = "fix the provider configuration reference and scopes"
+	} else if strings.TrimSpace(os.Getenv(cfg.Configuration.Name)) == "" {
+		provider.Status = ProviderUnavailable
+		provider.Reason = "Graphiti endpoint is not configured"
+		provider.NextAction = "set the referenced environment variable to a running Graphiti URL"
+	} else if !options.AllowNetwork {
+		provider.Status = ProviderConfigured
+		provider.Reason = "provider is configured; network discovery is disabled by default"
+		provider.NextAction = "rerun status with network discovery explicitly enabled"
+	} else {
+		provider = (GraphitiAdapter{}).Discover(context.Background(), cfg, options)
+	}
+	result := StatusSummary{Provider: provider, Agents: make([]AgentStatus, 0, len(agents))}
+	for _, agent := range agents {
+		mapped := AgentStatus{Agent: agent.Agent, Capabilities: make([]CapabilityMapping, 0, len(cfg.Capabilities)*len(cfg.Scopes))}
+		for _, scope := range cfg.Scopes {
+			for _, capability := range cfg.Capabilities {
+				mapped.Capabilities = append(mapped.Capabilities, CapabilityMapping{Capability: capability, Scope: scope, Status: CapabilityUnsupported, Reason: "agent has no verified shared-memory integration"})
+			}
+		}
+		result.Agents = append(result.Agents, mapped)
+	}
+	return result
+}
 
 // DiscoveryOptions controls side effects. Network access is opt-in; callers
 // must explicitly set AllowNetwork to true to probe a provider endpoint.
@@ -28,6 +94,7 @@ type DiscoveryOptions struct {
 }
 
 type DiscoveryResult struct {
+	ID               string         `json:"id,omitempty"`
 	Provider         string         `json:"provider"`
 	Status           ProviderStatus `json:"status"`
 	Capabilities     []Capability   `json:"capabilities,omitempty"`
@@ -46,7 +113,7 @@ type ProviderAdapter interface {
 type GraphitiAdapter struct{}
 
 func (GraphitiAdapter) Discover(ctx context.Context, cfg ProviderConfig, options DiscoveryOptions) DiscoveryResult {
-	result := DiscoveryResult{Provider: "graphiti", Status: ProviderUnavailable}
+	result := DiscoveryResult{ID: cfg.ID, Provider: "graphiti", Status: ProviderUnavailable}
 	if cfg.Provider != "graphiti" {
 		result.Status = ProviderUnsupported
 		result.Reason = "no adapter is registered for the configured provider"

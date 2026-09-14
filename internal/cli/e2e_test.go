@@ -173,6 +173,51 @@ func TestAgentsInventoryDistinguishesUnsupportedProjectAgent(t *testing.T) {
 	}
 }
 
+func TestMemoryStatusReportsConfiguredProviderAndPerAgentCapabilities(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte("version: v1\nmemory:\n  version: v1\n  id: local\n  provider: graphiti\n  configuration:\n    kind: env\n    name: GRAPHITI_URL\n  scopes: [user, project]\n  capabilities: [read, search]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRAPHITI_URL", "http://graphiti.test/?token=secret")
+	root := cli.NewAgentManagerCommand()
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs([]string{"--config", configPath, "memory", "status", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "GRAPHITI_URL") || strings.Contains(out.String(), "secret") {
+		t.Fatalf("status leaked sensitive data: %s", out.String())
+	}
+	for _, want := range []string{`"status":"configured"`, `"agent":"claude-code"`, `"status":"unsupported"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("status output=%s; missing %s", out.String(), want)
+		}
+	}
+}
+
+func TestMemoryConfigurePersistsExplicitProviderReference(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte("version: v1\nlibrary: /tmp/skills\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	root := cli.NewAgentManagerCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"--config", configPath, "memory", "configure", "--reference", "GRAPHITI_URL"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), "GRAPHITI_URL") {
+		t.Fatalf("config = %s; missing explicit reference", contents)
+	}
+}
+
 func TestEndToEndInitInstallsOperatorSkill(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

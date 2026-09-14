@@ -47,6 +47,7 @@ func newRootCommand(name string, deprecated bool) *cobra.Command {
 	root.AddCommand(newSubAgentsCommand(options))
 	root.AddCommand(newInitCommand())
 	root.AddCommand(newRecommendCommand(options))
+	root.AddCommand(newMemoryCommand(options))
 	root.AddCommand(newProjectCommands(options)...)
 	return root
 }

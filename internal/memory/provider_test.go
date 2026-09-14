@@ -61,3 +61,23 @@ func TestAgentAccessReportsIndependentCapabilitiesAndScopes(t *testing.T) {
 		t.Fatal("Supports(read, user) = true, want false")
 	}
 }
+
+func TestStatusSummarizesConfiguredProviderAndUnsupportedAgentAccess(t *testing.T) {
+	t.Setenv("GRAPHITI_URL", "http://graphiti.test")
+	cfg := memory.ProviderConfig{Version: "v1", ID: "local", Provider: "graphiti", Configuration: memory.ConfigReference{Kind: "env", Name: "GRAPHITI_URL"}, Scopes: []memory.Scope{memory.ScopeUser}, Capabilities: []memory.Capability{memory.CapabilityRead}}
+	status := memory.SummarizeStatus(cfg, []memory.AgentAccess{{Agent: "codex"}}, memory.DiscoveryOptions{})
+	if status.Provider.Status != memory.ProviderConfigured {
+		t.Fatalf("provider status = %q, want configured", status.Provider.Status)
+	}
+	if len(status.Agents) != 1 || status.Agents[0].Capabilities[0].Status != memory.CapabilityUnsupported {
+		t.Fatalf("agents = %#v, want unsupported agent capability", status.Agents)
+	}
+}
+
+func TestStatusDistinguishesUnsupportedProvider(t *testing.T) {
+	cfg := memory.ProviderConfig{Version: "v1", ID: "other", Provider: "unknown", Configuration: memory.ConfigReference{Kind: "env", Name: "MEMORY_URL"}, Scopes: []memory.Scope{memory.ScopeUser}}
+	status := memory.SummarizeStatus(cfg, nil, memory.DiscoveryOptions{})
+	if status.Provider.Status != memory.ProviderUnsupported {
+		t.Fatalf("provider status = %q, want unsupported", status.Provider.Status)
+	}
+}
