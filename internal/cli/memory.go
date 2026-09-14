@@ -58,7 +58,9 @@ func newMemoryStatusCommand(options *rootOptions) *cobra.Command {
 		}
 		access := make([]memory.AgentAccess, 0, len(adapter.Supported()))
 		for _, target := range adapter.Supported() {
-			access = append(access, declaredMemoryAccess(target.Target()))
+			// Agent adapters currently declare no verified shared-memory
+			// integration, so status must report these mappings unsupported.
+			access = append(access, memory.AgentAccess{Agent: string(target.Target())})
 		}
 		status := memory.SummarizeStatus(*cfg.Memory, access, memory.DiscoveryOptions{AllowNetwork: allowNetwork})
 		return renderMemoryStatus(cmd, status, asJSON)
@@ -66,22 +68,6 @@ func newMemoryStatusCommand(options *rootOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "write machine-readable JSON")
 	cmd.Flags().BoolVar(&allowNetwork, "network", false, "explicitly probe the provider health endpoint")
 	return cmd
-}
-
-// declaredMemoryAccess is deliberately explicit: these are the capabilities
-// the current agent integrations can map to a shared provider. Pi has no
-// verified shared-memory channel yet and is therefore reported unsupported.
-func declaredMemoryAccess(target adapter.Target) memory.AgentAccess {
-	access := memory.AgentAccess{Agent: string(target)}
-	switch target {
-	case adapter.ClaudeCode:
-		access.Capabilities = []memory.Capability{memory.CapabilityRead, memory.CapabilitySearch}
-		access.Scopes = []memory.Scope{memory.ScopeUser, memory.ScopeProject}
-	case adapter.Codex:
-		access.Capabilities = []memory.Capability{memory.CapabilityRead, memory.CapabilitySearch}
-		access.Scopes = []memory.Scope{memory.ScopeProject}
-	}
-	return access
 }
 
 func renderMemoryStatus(cmd *cobra.Command, status memory.StatusSummary, asJSON bool) error {

@@ -86,17 +86,20 @@ func TestStatusDistinguishesUnsupportedProvider(t *testing.T) {
 
 func TestStatusMapsProviderStateAndAgentDeclarations(t *testing.T) {
 	t.Setenv("GRAPHITI_URL", "http://graphiti.test")
-	cfg := memory.ProviderConfig{Version: "v1", ID: "local", Provider: "graphiti", Configuration: memory.ConfigReference{Kind: "env", Name: "GRAPHITI_URL"}, Scopes: []memory.Scope{memory.ScopeProject}, Capabilities: []memory.Capability{memory.CapabilityRead}}
-	declared := memory.AgentAccess{Agent: "codex", Capabilities: []memory.Capability{memory.CapabilityRead}, Scopes: []memory.Scope{memory.ScopeProject}}
+	cfg := memory.ProviderConfig{Version: "v1", ID: "local", Provider: "graphiti", Configuration: memory.ConfigReference{Kind: "env", Name: "GRAPHITI_URL"}, Scopes: []memory.Scope{memory.ScopeProject}, Capabilities: []memory.Capability{memory.CapabilityRead, memory.CapabilitySearch}}
+	declared := memory.AgentAccess{Agent: "codex", Capabilities: []memory.Capability{memory.CapabilityRead, memory.CapabilitySearch}, Scopes: []memory.Scope{memory.ScopeProject}}
 	status := memory.SummarizeStatus(cfg, []memory.AgentAccess{declared}, memory.DiscoveryOptions{})
 	if got := status.Agents[0].Capabilities[0].Status; got != memory.CapabilityConfigured {
 		t.Fatalf("configured mapping = %q, want configured", got)
 	}
 	status = memory.SummarizeStatus(cfg, []memory.AgentAccess{declared}, memory.DiscoveryOptions{AllowNetwork: true, HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Header: make(http.Header)}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"capabilities":["read"],"scopes":["project"]}`)), Header: make(http.Header)}, nil
 	})}})
 	if got := status.Agents[0].Capabilities[0].Status; got != memory.CapabilityAvailable {
 		t.Fatalf("available mapping = %q, want available", got)
+	}
+	if got := status.Agents[0].Capabilities[1].Status; got != memory.CapabilityUnsupported {
+		t.Fatalf("narrow provider mapping = %q, want unsupported", got)
 	}
 	unsupported := memory.AgentAccess{Agent: "pi"}
 	status = memory.SummarizeStatus(cfg, []memory.AgentAccess{unsupported}, memory.DiscoveryOptions{})

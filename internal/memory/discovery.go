@@ -79,9 +79,15 @@ func SummarizeStatus(cfg ProviderConfig, agents []AgentAccess, options Discovery
 		for _, scope := range cfg.Scopes {
 			for _, capability := range cfg.Capabilities {
 				mapping := CapabilityMapping{Capability: capability, Scope: scope, Status: CapabilityUnsupported, Reason: "agent does not declare this shared-memory capability or scope"}
-				if agent.Supports(capability, scope) {
+				providerSupports := containsCapability(cfg.Capabilities, capability) && containsScope(cfg.Scopes, scope)
+				if provider.Status == ProviderAvailable {
+					providerSupports = containsCapability(provider.Capabilities, capability) && containsScope(provider.Scopes, scope)
+				}
+				if agent.Supports(capability, scope) && providerSupports {
 					mapping.Status = capabilityStatus(provider.Status)
 					mapping.Reason = ""
+				} else if agent.Supports(capability, scope) {
+					mapping.Reason = "provider does not advertise this capability or scope"
 				}
 				mapped.Capabilities = append(mapped.Capabilities, mapping)
 			}
@@ -89,6 +95,24 @@ func SummarizeStatus(cfg ProviderConfig, agents []AgentAccess, options Discovery
 		result.Agents = append(result.Agents, mapped)
 	}
 	return result
+}
+
+func containsCapability(values []Capability, want Capability) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsScope(values []Scope, want Scope) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func capabilityStatus(provider ProviderStatus) CapabilityStatus {
