@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -251,6 +252,7 @@ func detectedTargets(project string) []string {
 }
 func newListCommand(options *rootOptions) *cobra.Command {
 	var project string
+	var asJSON bool
 	cmd := &cobra.Command{Use: "list", Short: "List project skills", RunE: func(cmd *cobra.Command, _ []string) error {
 		lib, err := library(options)
 		if err != nil {
@@ -260,6 +262,9 @@ func newListCommand(options *rootOptions) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if asJSON {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(items)
+		}
 		for _, i := range items {
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%s\n", i.Target, i.Identifier, i.Status); err != nil {
 				return err
@@ -268,6 +273,7 @@ func newListCommand(options *rootOptions) *cobra.Command {
 		return nil
 	}}
 	projectFlag(cmd, &project)
+	cmd.Flags().BoolVar(&asJSON, "json", false, "write machine-readable JSON")
 	return cmd
 }
 func newRemoveCommand(options *rootOptions) *cobra.Command {

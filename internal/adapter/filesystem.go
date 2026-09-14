@@ -69,7 +69,15 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 		if !os.IsNotExist(err) || options.SourceContent == nil {
 			return operation.Plan{}, fmt.Errorf("inspect resource source: %w", err)
 		}
-	} else if (plan.Resource.Kind == resource.SubAgent && info.Mode().IsRegular()) || (info.IsDir() && info.Mode()&os.ModeSymlink == 0) {
+	} else if plan.Resource.Kind == resource.SubAgent && info.Mode().IsRegular() {
+		if options.SourceContent == nil {
+			return operation.Plan{}, fmt.Errorf("%w: resource source must be a directory or managed SubAgent file", ErrUnsafePath)
+		}
+		existing, readErr := os.ReadFile(source)
+		if readErr != nil || !bytes.Equal(existing, options.SourceContent) {
+			return operation.Plan{}, fmt.Errorf("%w: refusing to replace an existing rendered SubAgent source", ErrUnsafePath)
+		}
+	} else if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
 		// Rendered SubAgents are regular files; Skills remain directories.
 	} else {
 		return operation.Plan{}, fmt.Errorf("%w: resource source must be a directory or managed SubAgent file", ErrUnsafePath)
@@ -149,7 +157,7 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 		}
 		return preview, err
 	}
-	after, err := options.Journal.Capture([]string{destination})
+	after, err := options.Journal.Capture(paths)
 	if err != nil {
 		return preview, errors.Join(err, options.Journal.Restore(before))
 	}
