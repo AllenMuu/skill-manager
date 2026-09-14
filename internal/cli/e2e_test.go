@@ -218,6 +218,21 @@ func TestMemoryConfigurePersistsExplicitProviderReference(t *testing.T) {
 	}
 }
 
+func TestMemoryPromoteRequiresScopeAndConfirmationWithoutNetwork(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte("version: v1\nmemory:\n  version: v1\n  id: local\n  provider: graphiti\n  configuration:\n    kind: env\n    name: GRAPHITI_URL\n  scopes: [user]\n  capabilities: [write]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GRAPHITI_URL", "http://127.0.0.1:1")
+	root := cli.NewAgentManagerCommand()
+	root.SetOut(&bytes.Buffer{})
+	root.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"--config", configPath, "memory", "promote", "--content", "note", "--scope", "user"})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "confirmation") {
+		t.Fatalf("promote error = %v, want confirmation requirement", err)
+	}
+}
+
 func TestEndToEndInitInstallsOperatorSkill(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

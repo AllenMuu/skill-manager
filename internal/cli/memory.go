@@ -12,8 +12,39 @@ import (
 
 func newMemoryCommand(options *rootOptions) *cobra.Command {
 	memoryCmd := &cobra.Command{Use: "memory", Short: "Configure and diagnose shared Memory providers"}
-	memoryCmd.AddCommand(newMemoryConfigureCommand(options), newMemoryStatusCommand(options))
+	memoryCmd.AddCommand(newMemoryConfigureCommand(options), newMemoryStatusCommand(options), newMemoryPromoteCommand(options))
 	return memoryCmd
+}
+
+func newMemoryPromoteCommand(options *rootOptions) *cobra.Command {
+	var content string
+	var scope string
+	var confirmed bool
+	cmd := &cobra.Command{Use: "promote", Short: "Explicitly promote selected knowledge to shared Memory", RunE: func(cmd *cobra.Command, _ []string) error {
+		cfg, err := config.Load(options.configPath)
+		if err != nil {
+			return err
+		}
+		if cfg.Memory == nil {
+			return fmt.Errorf("no Memory provider is configured")
+		}
+		writer, err := memory.NewConfiguredWriter(*cfg.Memory)
+		if err != nil {
+			return err
+		}
+		service := memory.PromotionService{Writer: writer, Capabilities: cfg.Memory.Capabilities, Scopes: cfg.Memory.Scopes}
+		if err := service.Promote(cmd.Context(), memory.PromotionRequest{Content: content, Scope: memory.Scope(scope), Confirmed: confirmed}); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "memory knowledge promoted")
+		return err
+	}}
+	flags := cmd.Flags()
+	flags.StringVar(&content, "content", "", "explicit knowledge to promote")
+	flags.StringVar(&scope, "scope", "", "promotion scope: user or project")
+	flags.BoolVar(&confirmed, "confirm", false, "confirm this provider write")
+	flags.BoolVar(&confirmed, "yes", false, "confirm this provider write")
+	return cmd
 }
 
 func newMemoryConfigureCommand(options *rootOptions) *cobra.Command {
