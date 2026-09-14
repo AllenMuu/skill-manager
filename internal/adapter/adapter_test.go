@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestClaudeCodeSubAgentPlanRendersNativeMarkdownAndSurfacesUnrepresentableFields(t *testing.T) {
+func TestClaudeCodeSubAgentPlanRetainsCanonicalControlPlaneFields(t *testing.T) {
 	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Code Reviewer", Role: "Reviews changes", Instructions: "Review the diff.", Skills: []string{"go-helper"}, Compatibility: resource.Compatibility{Agents: []string{"claude-code"}}, RequiredCapabilities: []resource.Capability{resource.CapabilityMemorySearch}}
 	a, ok := adapter.ForAgent(adapter.ClaudeCode)
 	if !ok {
@@ -35,7 +35,7 @@ func TestClaudeCodeSubAgentPlanRendersNativeMarkdownAndSurfacesUnrepresentableFi
 	if plan.Format != "claude-code-markdown" || !strings.Contains(plan.Content, "name: reviewer") || !strings.Contains(plan.Content, "Review the diff.") {
 		t.Fatalf("plan = %#v", plan)
 	}
-	if !containsString(plan.UnsupportedFields, "skills") || !containsString(plan.UnsupportedFields, "compatibility") || !containsCapability(plan.UnsupportedCapabilities, resource.CapabilityMemorySearch) {
+	if len(plan.UnsupportedFields) != 0 || !containsCapability(plan.UnsupportedCapabilities, resource.CapabilityMemorySearch) {
 		t.Fatalf("unsupported details = %#v", plan)
 	}
 }
@@ -55,7 +55,7 @@ func TestClaudeCodeSubAgentPlanSucceedsWhenCanonicalFieldsAreRepresentable(t *te
 	}
 }
 
-func TestCodexSubAgentPlanRendersNativeTOMLAndSurfacesUnrepresentableFields(t *testing.T) {
+func TestCodexSubAgentPlanRetainsCanonicalControlPlaneFields(t *testing.T) {
 	definition := subagent.Definition{Version: subagent.Version, ID: "reviewer", Name: "Code Reviewer", Role: "Reviews changes", Instructions: "Review the diff.", Skills: []string{"go-helper"}, Compatibility: resource.Compatibility{Agents: []string{"codex"}}}
 	a, ok := adapter.ForAgent(adapter.Codex)
 	if !ok {
@@ -63,8 +63,8 @@ func TestCodexSubAgentPlanRendersNativeTOMLAndSurfacesUnrepresentableFields(t *t
 	}
 	renderer := a.(adapter.SubAgentAdapter)
 	plan, err := renderer.PlanSubAgent(definition, adapter.SubAgentRequest{Root: "/project", Scope: adapter.SubAgentProject})
-	if !errors.Is(err, adapter.ErrSubAgentUnsupported) {
-		t.Fatalf("PlanSubAgent() error = %v, want explicit unsupported result", err)
+	if err != nil {
+		t.Fatalf("PlanSubAgent() error = %v", err)
 	}
 	if plan.Destination != filepath.Join("/project", ".codex", "agents", "reviewer.toml") {
 		t.Fatalf("destination = %q", plan.Destination)
@@ -72,7 +72,7 @@ func TestCodexSubAgentPlanRendersNativeTOMLAndSurfacesUnrepresentableFields(t *t
 	if plan.Format != "codex-toml" || !strings.Contains(plan.Content, `name = "reviewer"`) || !strings.Contains(plan.Content, "developer_instructions") {
 		t.Fatalf("plan = %#v", plan)
 	}
-	if !containsString(plan.UnsupportedFields, "skills") || !containsString(plan.UnsupportedFields, "compatibility") {
+	if len(plan.UnsupportedFields) != 0 {
 		t.Fatalf("unsupported fields = %#v", plan.UnsupportedFields)
 	}
 }
@@ -599,7 +599,9 @@ func TestInstallAndRemoveSubAgentIsJournaledAndUndoable(t *testing.T) {
 	preview, err := adapter.InstallSubAgent(definition, adapter.SubAgentRequest{Root: root, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{
 		SourceRoot: root,
 		Journal:    journal,
-		Confirm:    func(p operation.Plan) bool { return len(p.Changes) == 1 },
+		Confirm: func(p operation.Plan) bool {
+			return len(p.Changes) == 2 && p.Changes[0].Action == "write managed SubAgent source"
+		},
 	})
 	if err != nil {
 		t.Fatalf("InstallSubAgent() error = %v", err)

@@ -2,8 +2,8 @@
 
 Graphiti is the first provider adapter because it can be run as a user-owned
 local HTTP service and has a small health/discovery boundary. Agent Manager
-owns only the provider configuration reference and diagnostics; it does not
-install, start, migrate, or write Graphiti data.
+owns the provider configuration reference, diagnostics, and an explicit
+promotion control plane; it does not install, start, or migrate Graphiti.
 
 The adapter requires a `v1` provider configuration whose reference is an
 environment variable containing the Graphiti base URL (for example,
@@ -18,6 +18,8 @@ Graphiti deployments are not assumed to be installed, reachable, or uniform;
 an unavailable service produces a reason and a next action. Optional health
 metadata may advertise narrower capabilities and scopes, but malformed
 metadata does not turn a healthy endpoint into a write operation. Provider
-writes remain outside this task and require a future explicit promotion flow.
+writes require the explicit promotion flow: a selected user/project scope and
+confirmation are required before `POST /memories`; ordinary resource and
+conversation operations never write provider data.
 
 The probe uses Graphiti's standard `GET /healthcheck` endpoint.

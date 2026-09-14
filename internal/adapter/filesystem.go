@@ -80,6 +80,9 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 	}
 	preview := operation.NewPlan("place resource")
 	preview.ResourceKind = string(plan.Resource.Kind)
+	if options.SourceContent != nil {
+		preview.Changes = append(preview.Changes, operation.Change{Path: source, Action: "write managed SubAgent source"})
+	}
 	preview.Changes = append(preview.Changes, operation.Change{Path: destination, Action: "create absolute link", Detail: source})
 	if conflict {
 		if options.Conflict != ConflictReplace {
@@ -88,7 +91,7 @@ func PlaceFilesystem(plan resource.PlacementPlan, options FilesystemPlacementOpt
 		if !options.Force {
 			return preview, ErrForceRequired
 		}
-		preview.Changes[0].Action = "replace conflicting path with absolute link"
+		preview.Changes[len(preview.Changes)-1].Action = "replace conflicting path with absolute link"
 	}
 	if options.Confirm == nil || !options.Confirm(preview) {
 		return preview, ErrNotConfirmed

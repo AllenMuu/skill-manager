@@ -65,7 +65,7 @@ func newSubAgentInstallCommand(rootOptions *rootOptions, options *subAgentOption
 		if conflict != "" && !force {
 			return fmt.Errorf("conflict strategy %q requires --force confirmation", conflict)
 		}
-		_, definitions, diagnostics, err := discoverSubAgents(rootOptions, options)
+		registry, definitions, diagnostics, err := discoverSubAgents(rootOptions, options)
 		if err != nil {
 			return err
 		}
@@ -82,7 +82,7 @@ func newSubAgentInstallCommand(rootOptions *rootOptions, options *subAgentOption
 		}
 		request := adapter.SubAgentRequest{Root: project, Scope: adapter.SubAgentProject}
 		journal := operation.New(filepath.Join(project, ".skill-manager", "journal.json"))
-		plan, err := adapter.InstallSubAgent(definition, request, adapter.SubAgentFilesystemOptions{Target: adapter.Target(target), SourceRoot: options.root, Conflict: adapter.ConflictStrategy(conflict), Force: force, Journal: journal, Confirm: func(p operation.Plan) bool {
+		plan, err := adapter.InstallSubAgent(definition, request, adapter.SubAgentFilesystemOptions{Target: adapter.Target(target), SourceRoot: registry.Root(), Conflict: adapter.ConflictStrategy(conflict), Force: force, Journal: journal, Confirm: func(p operation.Plan) bool {
 			if _, printErr := fmt.Fprint(cmd.OutOrStdout(), p.String()); printErr != nil {
 				return false
 			}
@@ -106,7 +106,7 @@ func newSubAgentRemoveCommand(rootOptions *rootOptions, options *subAgentOptions
 		if target == "" {
 			return errors.New("--target is required")
 		}
-		_, definitions, diagnostics, err := discoverSubAgents(rootOptions, options)
+		registry, definitions, diagnostics, err := discoverSubAgents(rootOptions, options)
 		if err != nil {
 			return err
 		}
@@ -122,7 +122,7 @@ func newSubAgentRemoveCommand(rootOptions *rootOptions, options *subAgentOptions
 			return unknownSubAgentError(args[0], definitions, diagnostics)
 		}
 		journal := operation.New(filepath.Join(project, ".skill-manager", "journal.json"))
-		_, err = adapter.RemoveSubAgent(definition, adapter.SubAgentRequest{Root: project, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{Target: adapter.Target(target), SourceRoot: options.root, Journal: journal, Confirm: func(p operation.Plan) bool {
+		_, err = adapter.RemoveSubAgent(definition, adapter.SubAgentRequest{Root: project, Scope: adapter.SubAgentProject}, adapter.SubAgentFilesystemOptions{Target: adapter.Target(target), SourceRoot: registry.Root(), Journal: journal, Confirm: func(p operation.Plan) bool {
 			if _, printErr := fmt.Fprint(cmd.OutOrStdout(), p.String()); printErr != nil {
 				return false
 			}

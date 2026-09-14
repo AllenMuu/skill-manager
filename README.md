@@ -105,8 +105,9 @@ to its base URL through an environment variable such as `GRAPHITI_URL`.
 Credentials stay outside Agent Manager. Discovery is read-only and has network
 access disabled by default; an explicit status/discovery caller must opt in to
 the `GET /healthcheck` probe. If Graphiti is not configured or reachable, status
-reports the reason and an actionable next step. Agent Manager does not install,
-start, or write to Graphiti, and it never copies Skills or conversation data
+reports the reason and an actionable next step. Agent Manager does not install
+or start Graphiti. It writes provider data only through the explicit, scoped,
+confirmed `memory promote` command; it never copies Skills or conversation data
 into shared Memory implicitly.
 
 ## Recommend

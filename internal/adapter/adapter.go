@@ -4,6 +4,7 @@ package adapter
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -86,7 +87,13 @@ type directoryAdapter struct {
 func (a directoryAdapter) Target() Target { return a.target }
 
 func (a directoryAdapter) Detect() Detection {
-	return Detection{Target: a.target, Available: true}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return Detection{Target: a.target}
+	}
+	root := filepath.Dir(filepath.Dir(a.GlobalSkillPath(home, "placeholder")))
+	info, err := os.Stat(root)
+	return Detection{Target: a.target, Available: err == nil && info.IsDir()}
 }
 
 func (a directoryAdapter) Inspect(kind resource.Kind, managed resource.ManagedResource) (resource.Inspection, error) {

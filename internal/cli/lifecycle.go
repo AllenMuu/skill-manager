@@ -13,6 +13,7 @@ import (
 	"github.com/AllenMuu/skill-manager/internal/diagnostic"
 	"github.com/AllenMuu/skill-manager/internal/initcmd"
 	"github.com/AllenMuu/skill-manager/internal/lifecycle"
+	"github.com/AllenMuu/skill-manager/internal/memory"
 	"github.com/AllenMuu/skill-manager/internal/operation"
 	"github.com/AllenMuu/skill-manager/internal/search"
 	"github.com/spf13/cobra"
@@ -346,6 +347,24 @@ func newDoctorCommand(options *rootOptions) *cobra.Command {
 		}
 		for _, f := range findings {
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", f.Path, f.Message); err != nil {
+				return err
+			}
+		}
+		cfg, err := config.Load(options.configPath)
+		if err != nil {
+			return err
+		}
+		if cfg.Memory != nil {
+			status := memory.SummarizeStatus(*cfg.Memory, nil, memory.DiscoveryOptions{})
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "memory provider: %s; status: %s", status.Provider.Provider, status.Provider.Status); err != nil {
+				return err
+			}
+			if status.Provider.Reason != "" {
+				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "; reason: %s", status.Provider.Reason); err != nil {
+					return err
+				}
+			}
+			if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
 				return err
 			}
 		}

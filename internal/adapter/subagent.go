@@ -108,7 +108,6 @@ func (a directoryAdapter) subAgentPlan(definition subagent.Definition, request S
 		plan.Format = "claude-code-markdown"
 		plan.Destination = filepath.Join(base, ".claude", "agents", definition.ID+".md")
 		plan.Content = renderClaudeSubAgent(definition)
-		plan.UnsupportedFields = unsupportedCanonicalFields(definition)
 	case Codex:
 		plan.Format = "codex-toml"
 		plan.Destination = filepath.Join(base, ".codex", "agents", definition.ID+".toml")
@@ -118,7 +117,6 @@ func (a directoryAdapter) subAgentPlan(definition subagent.Definition, request S
 			plan.UnsupportedFields = []string{"rendered content: " + err.Error()}
 			return plan
 		}
-		plan.UnsupportedFields = unsupportedCanonicalFields(definition)
 	case Pi:
 		// Pi's documented native locations contain skills, settings, and
 		// context files; its subagent workflow is an extension, not a native
@@ -135,17 +133,6 @@ func validateSubAgentDefinition(definition subagent.Definition) error {
 
 func unsupportedSubAgentCapabilities(a directoryAdapter, required []resource.Capability) []resource.Capability {
 	return resource.MissingCapabilities(required, a.Capabilities(resource.SubAgent))
-}
-
-func unsupportedCanonicalFields(definition subagent.Definition) []string {
-	fields := make([]string, 0, 2)
-	if len(definition.Skills) > 0 {
-		fields = append(fields, "skills")
-	}
-	if len(definition.Compatibility.Agents) > 0 {
-		fields = append(fields, "compatibility")
-	}
-	return fields
 }
 
 func planSupported(plan SubAgentPlan) bool {
