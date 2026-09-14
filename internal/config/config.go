@@ -11,6 +11,7 @@ import (
 
 // Config contains machine-local Skill Manager settings.
 type Config struct {
+	Version     string
 	LibraryPath string
 }
 
@@ -22,13 +23,13 @@ func Load(path string) (Config, error) {
 		if err != nil {
 			return Config{}, err
 		}
-		return Config{LibraryPath: defaultPath}, nil
+		return Config{Version: "v1", LibraryPath: defaultPath}, nil
 	}
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, fmt.Errorf("read configuration: %w", err)
 	}
-	library, err := parseLibraryPath(string(contents))
+	version, library, err := parseConfiguration(string(contents))
 	if err != nil {
 		return Config{}, fmt.Errorf("parse configuration: %w", err)
 	}
@@ -37,7 +38,7 @@ func Load(path string) (Config, error) {
 		if err != nil {
 			return Config{}, err
 		}
-		return Config{LibraryPath: defaultPath}, nil
+		return Config{Version: version, LibraryPath: defaultPath}, nil
 	}
 	if !filepath.IsAbs(library) {
 		library = filepath.Join(filepath.Dir(path), library)
@@ -46,7 +47,7 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("resolve configured library: %w", err)
 	}
-	return Config{LibraryPath: library}, nil
+	return Config{Version: version, LibraryPath: library}, nil
 }
 
 func defaultLibraryPath() (string, error) {
@@ -57,12 +58,19 @@ func defaultLibraryPath() (string, error) {
 	return filepath.Join(home, ".agents", "skills"), nil
 }
 
-func parseLibraryPath(contents string) (string, error) {
+func parseConfiguration(contents string) (string, string, error) {
 	var fileConfig struct {
+		Version string `yaml:"version"`
 		Library string `yaml:"library"`
 	}
 	if err := yaml.Unmarshal([]byte(contents), &fileConfig); err != nil {
-		return "", err
+		return "", "", err
 	}
-	return fileConfig.Library, nil
+	if fileConfig.Version == "" {
+		fileConfig.Version = "v1"
+	}
+	if fileConfig.Version != "v1" {
+		return "", "", fmt.Errorf("unsupported configuration version %q", fileConfig.Version)
+	}
+	return fileConfig.Version, fileConfig.Library, nil
 }

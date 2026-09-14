@@ -35,6 +35,9 @@ func TestLoadUsesConfiguredLibraryPath(t *testing.T) {
 	if loaded.LibraryPath != "/var/lib/skills" {
 		t.Errorf("LibraryPath = %q, want %q", loaded.LibraryPath, "/var/lib/skills")
 	}
+	if loaded.Version != "v1" {
+		t.Errorf("Version = %q, want v1 for a legacy configuration", loaded.Version)
+	}
 }
 
 func TestLoadParsesCommentedYAMLConfiguration(t *testing.T) {

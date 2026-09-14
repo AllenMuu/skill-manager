@@ -1,23 +1,49 @@
-// Package cli provides the Skill Manager command-line interface.
+// Package cli provides the Agent Manager command-line interface.
 package cli
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
 
 type rootOptions struct {
 	configPath string
 }
 
-// NewRootCommand constructs the read-only Skill Manager command tree.
+// NewRootCommand constructs the primary Agent Manager command tree.
 func NewRootCommand() *cobra.Command {
+	return NewAgentManagerCommand()
+}
+
+// NewAgentManagerCommand constructs the primary Agent Manager command tree.
+func NewAgentManagerCommand() *cobra.Command {
+	return newRootCommand("agent-manager", false)
+}
+
+// NewSkillManagerCommand constructs the temporary Skill Manager compatibility
+// alias. It preserves command behavior while directing operators to the new
+// primary command.
+func NewSkillManagerCommand() *cobra.Command {
+	return newRootCommand("skill-manager", true)
+}
+
+func newRootCommand(name string, deprecated bool) *cobra.Command {
 	options := &rootOptions{}
 	root := &cobra.Command{
-		Use:           "skill-manager",
-		Short:         "Discover and manage local directory skills",
+		Use:           name,
+		Short:         "Discover and manage local agent resources",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
-	root.PersistentFlags().StringVar(&options.configPath, "config", "", "path to Skill Manager configuration")
+	if deprecated {
+		root.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
+			fmt.Fprintln(cmd.ErrOrStderr(), "warning: skill-manager is deprecated; use agent-manager instead")
+		}
+	}
+	root.PersistentFlags().StringVar(&options.configPath, "config", "", "path to Agent Manager configuration")
 	root.AddCommand(newSearchCommand(options))
+	root.AddCommand(newAgentsCommand())
 	root.AddCommand(newInitCommand())
 	root.AddCommand(newRecommendCommand(options))
 	root.AddCommand(newProjectCommands(options)...)

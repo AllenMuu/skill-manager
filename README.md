@@ -1,8 +1,8 @@
-# Skill Manager
+# Agent Manager
 
-Skill Manager manages the availability of local agent skills across a shared skill library, agent-wide locations, and individual repositories. It discovers skills from a configurable local library, activates them per project through machine-local soft links, and keeps every mutation guarded, journaled, and reversible.
+Agent Manager governs local agent resources across a shared Skill library, agent-wide locations, and individual repositories. Its first managed resource domain is Skills: it discovers Skills from a configurable local library, activates them per project through machine-local soft links, and keeps every mutation guarded, journaled, and reversible.
 
-Skill Manager never executes skill-provided code and never installs dependencies.
+Agent Manager never executes managed-resource code and never installs dependencies.
 
 ## How activation works
 
@@ -14,12 +14,12 @@ Skill Manager never executes skill-provided code and never installs dependencies
 ## Build
 
 ```text
-go build ./cmd/skill-manager
+go build ./cmd/agent-manager
 ```
 
 ## Configuration
 
-Skill Manager reads a small YAML file with the library location:
+Agent Manager reads a small YAML file with the Skill library location:
 
 ```yaml
 library: ~/.agents/skills
@@ -30,12 +30,14 @@ Pass it with `--config <path>`; without it the default `~/.agents/skills` is use
 ## Getting started
 
 ```text
-skill-manager init                 # verify CLI and install the global Operator skill
-skill-manager search <query>        # find skills in the library
-skill-manager select --project .    # interactive search, multi-select, and activation
-skill-manager add <skill> --project . --target codex
-skill-manager list --project .      # show managed/unmanaged/orphaned skills
+agent-manager init                 # verify CLI and install the global Operator skill
+agent-manager search <query>        # find Skills in the library
+agent-manager select --project .    # interactive search, multi-select, and activation
+agent-manager add <skill> --project . --target codex
+agent-manager list --project .      # show managed/unmanaged/orphaned Skills
 ```
+
+`skill-manager` remains a temporary compatibility alias and emits a migration notice. Use `agent-manager` in new automation.
 
 ## Commands
 
@@ -62,7 +64,7 @@ Every mutating command previews its plan, requires confirmation (`--yes` or an i
 When activation would replace an existing unmanaged path, Skill Manager refuses by default. To replace it, select the conflict strategy and supply force confirmation:
 
 ```text
-skill-manager add <skill> --project . --target codex --conflict replace --force
+agent-manager add <skill> --project . --target codex --conflict replace --force
 ```
 
 The replacement is journaled like any other operation, so `undo` restores the previous content.
@@ -83,26 +85,26 @@ Installing for an undeclared target produces a warning in the plan preview. A wa
 Managed links are machine-local. Committing them would make activation portable, which conflicts with the local-only model, so Skill Manager reports their Git tracking state:
 
 ```text
-skill-manager doctor --project .                    # show tracked/ignored/would-be-tracked links
-skill-manager doctor --project . --update-gitignore  # offer exact scoped ignores after confirmation
+agent-manager doctor --project .                    # show tracked/ignored/would-be-tracked links
+agent-manager doctor --project . --update-gitignore  # offer exact scoped ignores after confirmation
 ```
 
 `doctor` only ever appends the exact paths of managed links it owns; it never rewrites unrelated tracking rules.
 
 ## Recovery
 
-- `skill-manager undo` — revert the latest journaled operation.
-- `skill-manager doctor` — diagnose invalid library entries, orphaned links, and unsupported agents.
-- `skill-manager reconcile` — relink orphaned managed links after the library moved (uses journal ownership, confirmed, rolled back on failure).
+- `agent-manager undo` — revert the latest journaled operation.
+- `agent-manager doctor` — diagnose invalid library entries, orphaned links, and unsupported agents.
+- `agent-manager reconcile` — relink orphaned managed links after the library moved (uses journal ownership, confirmed, rolled back on failure).
 
 ## Recommend
 
 `recommend` is a read-only command that detects the current project's technology stack from static markers and ranks matching skills from the library. It never executes project code, installs dependencies, uses the network, or modifies any file:
 
 ```text
-skill-manager recommend                 # evaluate the current directory
-skill-manager recommend --project ../service
-skill-manager recommend --project . --json
+agent-manager recommend                 # evaluate the current directory
+agent-manager recommend --project ../service
+agent-manager recommend --project . --json
 ```
 
 Detected technologies come from the documented marker vocabulary: `go.mod`, `package.json`, `tsconfig.json`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `pyproject.toml`, `Cargo.toml`, `Gemfile`, `Dockerfile`, Compose files, and the `.claude`, `.codex`, and `.agents` directories. The technology vocabulary covers Go, Node.js, TypeScript, Maven, Gradle, Python, Rust, Ruby, Docker, Compose, Express, NestJS, React, Next.js, Spring Boot, Django, FastAPI, Rails, PostgreSQL, MySQL, Redis, MongoDB, and the supported agents. Matching skills are ranked by exact companion tags first, then identifier and description text, then body text; each recommendation explains why it matched. Traversal skips dependency and build directories and directory soft links, reads at most 1 MiB per marker, and stops after 10,000 entries with `scanComplete: false`.

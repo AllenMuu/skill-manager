@@ -1,6 +1,8 @@
-# Skill Manager
+# Agent Manager
 
-Skill Manager manages the availability of local agent resources across a shared skill library, agent-wide locations, and individual repositories.
+**Agent Manager**:
+The local control plane that governs agent resources across a shared Skill library, agent-wide locations, and individual repositories. Skills are the first managed resource kind; the product name does not replace Skill-domain vocabulary.
+_Avoid_: Skill Manager (except when referring to the compatibility CLI or pre-migration state)
 
 ## Language
 
@@ -9,7 +11,7 @@ The independent, authoritative local collection of reusable skills. It is the so
 _Avoid_: skill repository, global skill folder
 
 **Global baseline**:
-The intentionally small set of agent resources kept available in an agent's global location, including the Skill Manager CLI usage skill.
+The intentionally small set of agent resources kept available in an agent's global location, including the Agent Manager CLI usage skill.
 _Avoid_: global skills, root skills
 
 **Project activation**:
@@ -17,7 +19,7 @@ The resulting installation of selected managed skills for one repository, repres
 _Avoid_: project configuration, project sync
 
 **Managed skill**:
-A skill whose presence in a project or global baseline is controlled by Skill Manager from the skill library.
+A Skill whose presence in a project or global baseline is controlled by Agent Manager from the Skill library.
 _Avoid_: copied skill, local skill
 
 **Project skill**:
@@ -37,7 +39,7 @@ An agent integration selected to receive a project's managed-skill soft links. A
 _Avoid_: platform, provider
 
 **Operator skill**:
-A small global-baseline skill that teaches an agent to use Skill Manager: search the skill library, explain a recommendation, request confirmation, then invoke the CLI.
+A small global-baseline Skill that teaches an agent to use Agent Manager: search the Skill library, explain a recommendation, request confirmation, then invoke the CLI.
 _Avoid_: CLI prompt, manager prompt
 
 **Directory skill**:
@@ -49,7 +51,7 @@ Optional skill metadata that names the target agents for which a skill's instruc
 _Avoid_: installation support, adapter support
 
 **Operation journal**:
-The local, reversible record of a confirmed Skill Manager file operation, used to preview changes and support undo.
+The local, reversible record of a confirmed Agent Manager file operation, used to preview changes and support undo.
 _Avoid_: audit log, sync history
 
 **Initialization**:

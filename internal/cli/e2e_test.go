@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,92 @@ func runCLIErr(t *testing.T, configPath string, args ...string) error {
 	root.SetErr(&bytes.Buffer{})
 	root.SetArgs(append([]string{"--config", configPath}, args...))
 	return root.Execute()
+}
+
+func TestAgentManagerPrimaryCommandAndSkillManagerCompatibilityAlias(t *testing.T) {
+	_, _, configPath := e2eFixture(t)
+
+	primary := cli.NewAgentManagerCommand()
+	if primary.Use != "agent-manager" {
+		t.Fatalf("primary command = %q, want agent-manager", primary.Use)
+	}
+	primaryOut := &bytes.Buffer{}
+	primary.SetOut(primaryOut)
+	primary.SetErr(primaryOut)
+	primary.SetArgs([]string{"--config", configPath, "search", "demo"})
+	if err := primary.Execute(); err != nil {
+		t.Fatalf("primary command: %v", err)
+	}
+	if !strings.Contains(primaryOut.String(), "demo") {
+		t.Fatalf("primary output=%q", primaryOut.String())
+	}
+
+	legacy := cli.NewSkillManagerCommand()
+	legacyOut := &bytes.Buffer{}
+	legacy.SetOut(legacyOut)
+	legacy.SetErr(legacyOut)
+	legacy.SetArgs([]string{"--config", configPath, "search", "demo"})
+	if err := legacy.Execute(); err != nil {
+		t.Fatalf("legacy command: %v", err)
+	}
+	if !strings.Contains(legacyOut.String(), "deprecated") || !strings.Contains(legacyOut.String(), "agent-manager") {
+		t.Fatalf("legacy output=%q; want migration notice", legacyOut.String())
+	}
+}
+
+func TestAgentsInventoryReportsDeclaredResourceCapabilitiesAsJSON(t *testing.T) {
+	root := cli.NewAgentManagerCommand()
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs([]string{"agents", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("agents inventory: %v", err)
+	}
+	for _, want := range []string{`"id":"claude-code"`, `"id":"codex"`, `"id":"pi"`, `"resourceKinds":["skill"]`, `"filesystem-write"`} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("inventory output=%q; missing %s", out.String(), want)
+		}
+	}
+}
+
+func TestAgentsInventoryReportsLocalAdapterAvailability(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	if err := os.Mkdir(filepath.Join(home, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	root := cli.NewAgentManagerCommand()
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs([]string{"agents", "--json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("agents inventory: %v", err)
+	}
+
+	var items []struct {
+		ID           string `json:"id"`
+		Availability string `json:"availability"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &items); err != nil {
+		t.Fatalf("decode inventory: %v", err)
+	}
+	availability := make(map[string]string, len(items))
+	for _, item := range items {
+		availability[item.ID] = item.Availability
+	}
+	for id, want := range map[string]string{"claude-code": "configured", "codex": "detected", "pi": "unavailable"} {
+		if got := availability[id]; got != want {
+			t.Errorf("%s availability = %q, want %q; inventory=%s", id, got, want, out.String())
+		}
+	}
 }
 
 func TestEndToEndInitInstallsOperatorSkill(t *testing.T) {
