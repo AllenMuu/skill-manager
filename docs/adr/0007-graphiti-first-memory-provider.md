@@ -9,7 +9,7 @@ The adapter requires a `v1` provider configuration whose reference is an
 environment variable containing the Graphiti base URL (for example,
 `GRAPHITI_URL`). Credentials, if required by a deployment, remain in the
 external environment or credential store and never enter Agent Manager output
-or journal evidence. The adapter probes `GET /health` only when a caller
+or journal evidence. The adapter probes `GET /healthcheck` only when a caller
 explicitly enables network discovery. Discovery is unavailable by default,
 including when a URL is configured, so ordinary inventory and status checks
 cannot cause network access.
