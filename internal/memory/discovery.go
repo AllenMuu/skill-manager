@@ -212,15 +212,15 @@ func (GraphitiAdapter) Discover(ctx context.Context, cfg ProviderConfig, options
 	// A compatible service may advertise a narrower set; malformed optional
 	// metadata is ignored because health remains a useful availability signal.
 	var metadata struct {
-		Capabilities []Capability `json:"capabilities"`
-		Scopes       []Scope      `json:"scopes"`
+		Capabilities *[]Capability `json:"capabilities"`
+		Scopes       *[]Scope      `json:"scopes"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&metadata) == nil {
-		if len(metadata.Capabilities) > 0 {
-			result.Capabilities = metadata.Capabilities
+		if metadata.Capabilities != nil {
+			result.Capabilities = *metadata.Capabilities
 		}
-		if len(metadata.Scopes) > 0 {
-			result.Scopes = metadata.Scopes
+		if metadata.Scopes != nil {
+			result.Scopes = *metadata.Scopes
 		}
 	}
 	return result
