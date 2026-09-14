@@ -97,6 +97,18 @@ agent-manager doctor --project . --update-gitignore  # offer exact scoped ignore
 - `agent-manager doctor` — diagnose invalid library entries, orphaned links, and unsupported agents.
 - `agent-manager reconcile` — relink orphaned managed links after the library moved (uses journal ownership, confirmed, rolled back on failure).
 
+## Shared Memory provider discovery
+
+Graphiti is the first supported shared-Memory provider adapter. It expects a
+user-managed Graphiti HTTP service and a `v1` provider configuration referring
+to its base URL through an environment variable such as `GRAPHITI_URL`.
+Credentials stay outside Agent Manager. Discovery is read-only and has network
+access disabled by default; an explicit status/discovery caller must opt in to
+the `GET /health` probe. If Graphiti is not configured or reachable, status
+reports the reason and an actionable next step. Agent Manager does not install,
+start, or write to Graphiti, and it never copies Skills or conversation data
+into shared Memory implicitly.
+
 ## Recommend
 
 `recommend` is a read-only command that detects the current project's technology stack from static markers and ranks matching skills from the library. It never executes project code, installs dependencies, uses the network, or modifies any file:

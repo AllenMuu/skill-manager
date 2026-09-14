@@ -79,4 +79,6 @@ Issue #3's artifacts and evaluation harness remain follow-on work; this change o
 
 ## Open Questions
 
-- Which shared-Memory provider (TencentDB Agent Memory or Graphiti) is feasible in the target local environment without violating the no-new-network-default constraint? This selection affects only the Phase 3 adapter implementation, not the protocol or task breakdown.
+- Resolved for Phase 3: Graphiti is the first provider adapter. It is treated as
+  a user-managed local HTTP dependency, with environment-only URL references,
+  opt-in health discovery, and no installation or implicit provider writes.

@@ -33,7 +33,7 @@
 ## 5. Shared Memory provider foundation
 
 - [x] 5.1 Define versioned Memory provider configuration, non-secret configuration references, user/project scopes, and read/write/search capability models; verify sensitive values are redacted from output and journal evidence.
-- [ ] 5.2 Select one feasible provider adapter after documenting local integration constraints; implement provider capability discovery without enabling network access by default, and verify an unavailable provider yields actionable status.
+- [x] 5.2 Select one feasible provider adapter after documenting local integration constraints; implement provider capability discovery without enabling network access by default, and verify an unavailable provider yields actionable status.
 - [ ] 5.3 Implement explicit provider configuration and `memory status` output with per-agent capability mapping; verify it distinguishes configured, available, unavailable, and unsupported states.
 - [ ] 5.4 Implement explicit knowledge-promotion flow with scope and confirmation requirements; verify ordinary resource operations and agent conversation data never trigger provider writes.
 - [ ] 5.5 Add provider, adapter-mapping, and no-implicit-write tests using a fake or local test provider; verify `go test ./...` passes without external credentials or network access.
